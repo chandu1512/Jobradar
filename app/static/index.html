@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JobRadar</title>
+<style>
+:root {
+  --bg: #fafaf9; --panel: #ffffff; --text: #1c1917; --muted: #78716c; --line: #e7e5e4;
+  --accent: #0f766e; --accent-soft: #ccfbf1; --new: #b45309; --new-soft: #fef3c7;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0c0a09; --panel: #1c1917; --text: #f5f5f4; --muted: #a8a29e; --line: #292524;
+          --accent: #2dd4bf; --accent-soft: #134e4a; --new: #fbbf24; --new-soft: #451a03; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); }
+.wrap { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+.top { display: flex; align-items: baseline; gap: 16px; padding: 14px 0 10px; flex-wrap: wrap; }
+h1 { font-size: 18px; margin: 0; letter-spacing: -0.01em; }
+.stats { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.live { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.dot.on { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+form { display: flex; gap: 8px; flex-wrap: wrap; padding-bottom: 12px; }
+input, select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+                border-radius: 8px; padding: 7px 10px; min-width: 0; }
+input[type=search] { flex: 1 1 220px; }
+label.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); }
+ul { list-style: none; margin: 0; padding: 0; }
+li { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 12px 0;
+     border-bottom: 1px solid var(--line); }
+li.fresh { animation: flash 3s ease-out; }
+@keyframes flash { from { background: var(--new-soft); } to { background: transparent; } }
+.title { font-weight: 600; color: var(--text); text-decoration: none; }
+.title:hover { color: var(--accent); }
+.meta { grid-column: 1; color: var(--muted); font-size: 13px; }
+.age { grid-row: 1 / span 2; grid-column: 2; text-align: right; font-size: 13px; color: var(--muted);
+       font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 999px; margin-left: 6px;
+       background: var(--accent-soft); color: var(--accent); vertical-align: 1px; }
+.tag.new { background: var(--new-soft); color: var(--new); }
+.more { display: block; margin: 20px auto; font: inherit; background: none; border: 1px solid var(--line);
+        color: var(--text); border-radius: 8px; padding: 8px 16px; cursor: pointer; }
+.empty { color: var(--muted); padding: 40px 0; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="top">
+      <h1>JobRadar</h1>
+      <span class="stats" id="stats"></span>
+      <span class="stats live"><span class="dot" id="dot"></span><span id="livetxt">connecting</span></span>
+    </div>
+    <form id="f">
+      <input type="search" name="q" placeholder="Title or company" autocomplete="off">
+      <select name="level">
+        <option value="">All levels</option>
+        <option value="newgrad">New grad / entry</option>
+        <option value="intern">Internships</option>
+      </select>
+      <select name="state"><option value="">All states</option></select>
+      <select name="hours">
+        <option value="1">Last hour</option>
+        <option value="24" selected>Last 24h</option>
+        <option value="168">Last 7 days</option>
+        <option value="720">Last 30 days</option>
+      </select>
+      <label class="chk"><input type="checkbox" name="remote"> Remote</label>
+    </form>
+  </div>
+</header>
+<main class="wrap">
+  <ul id="list"></ul>
+  <button class="more" id="more" hidden>Load more</button>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const form = $("#f"), list = $("#list"), more = $("#more");
+let lastId = null;
+
+const ago = t => {
+  const m = Math.max(0, (Date.now() - new Date(t)) / 60000);
+  if (m < 60) return `${Math.round(m)}m ago`;
+  if (m < 1440) return `${Math.round(m / 60)}h ago`;
+  return `${Math.round(m / 1440)}d ago`;
+};
+const esc = s => (s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function params() {
+  const fd = new FormData(form), p = new URLSearchParams();
+  for (const k of ["q", "level", "state", "hours"]) if (fd.get(k)) p.set(k, fd.get(k));
+  if (fd.get("remote")) p.set("remote", "true");
+  return p;
+}
+
+function row(j, fresh) {
+  const li = document.createElement("li");
+  if (fresh) li.className = "fresh";
+  const where = j.states?.length ? `${j.location ?? ""}` : (j.location ?? "");
+  li.innerHTML = `
+    <div><a class="title" href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.title)}</a>
+      ${j.remote ? '<span class="tag">remote</span>' : ""}
+      ${j.discovered_live ? '<span class="tag new">live</span>' : ""}</div>
+    <div class="meta">${esc(j.company)} · ${esc(where)}</div>
+    <div class="age" data-t="${j.first_seen}">${ago(j.first_seen)}</div>`;
+  return li;
+}
+
+async function load(reset) {
+  const p = params(); p.set("limit", 50);
+  if (!reset && lastId) p.set("before_id", lastId);
+  const jobs = await fetch(`/jobs?${p}`).then(r => r.json());
+  if (reset) list.innerHTML = "";
+  jobs.forEach(j => list.append(row(j)));
+  lastId = jobs.length ? jobs[jobs.length - 1].id : lastId;
+  more.hidden = jobs.length < 50;
+  if (reset && !jobs.length) list.innerHTML = '<div class="empty">No matching jobs in this window.</div>';
+}
+
+function matches(j) {
+  const p = params(), q = (p.get("q") || "").toLowerCase();
+  if (!j.is_us) return false;
+  if (q && !j.title.toLowerCase().includes(q) && !j.company.toLowerCase().includes(q)) return false;
+  if (p.get("state") && !j.states.includes(p.get("state"))) return false;
+  if (p.get("remote") && !j.remote) return false;
+  if (p.get("level")) return false; // level regex lives server side; the next reload picks these up
+  return true;
+}
+
+async function stats() {
+  const s = await fetch("/stats").then(r => r.json());
+  const med = s.median_detect_minutes == null ? "" : ` · median detect ${Math.round(s.median_detect_minutes)} min`;
+  $("#stats").textContent = `${s.companies.toLocaleString()} companies · ${s.active_us_jobs.toLocaleString()} US jobs · ${s.new_last_24h} new today${med}`;
+}
+
+async function states() {
+  const rows = await fetch("/states").then(r => r.json()), sel = form.state;
+  rows.sort((a, b) => a.state.localeCompare(b.state))
+      .forEach(r => sel.add(new Option(`${r.state} (${r.n})`, r.state)));
+}
+
+function live() {
+  const es = new EventSource("/jobs/stream");
+  es.onopen = () => { $("#dot").className = "dot on"; $("#livetxt").textContent = "live"; };
+  es.onerror = () => { $("#dot").className = "dot"; $("#livetxt").textContent = "reconnecting"; };
+  es.onmessage = e => {
+    const j = JSON.parse(e.data);
+    if (matches(j)) { list.querySelector(".empty")?.remove(); list.prepend(row(j, true)); }
+  };
+}
+
+let t;
+form.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => load(true), 250); });
+form.addEventListener("submit", e => e.preventDefault());
+more.onclick = () => load(false);
+setInterval(() => document.querySelectorAll(".age").forEach(el => el.textContent = ago(el.dataset.t)), 30000);
+setInterval(stats, 60000);
+
+load(true); stats(); states(); live();
+</script>
+</body>
+</html>
