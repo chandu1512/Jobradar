@@ -57,6 +57,10 @@ li.fresh { animation: flash 3s ease-out; }
     </div>
     <form id="f">
       <input type="search" name="q" placeholder="Title or company" autocomplete="off">
+      <input type="search" name="company" placeholder="Company" aria-label="Company"
+             list="companies" autocomplete="off">
+      <datalist id="companies"></datalist>
+      <select name="category" aria-label="Job category"><option value="">All job categories</option></select>
       <select name="level">
         <option value="">All levels</option>
         <option value="newgrad">New grad / entry</option>
@@ -92,7 +96,7 @@ const esc = s => (s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":
 
 function params() {
   const fd = new FormData(form), p = new URLSearchParams();
-  for (const k of ["q", "level", "state", "hours"]) if (fd.get(k)) p.set(k, fd.get(k));
+  for (const k of ["q", "company", "category", "level", "state", "hours"]) if (fd.get(k)) p.set(k, fd.get(k));
   if (fd.get("remote")) p.set("remote", "true");
   return p;
 }
@@ -124,6 +128,8 @@ async function load(reset) {
 function matches(j) {
   const p = params(), q = (p.get("q") || "").toLowerCase();
   if (!j.is_us) return false;
+  if (p.get("company") && !j.company.toLowerCase().includes(p.get("company").toLowerCase())) return false;
+  if (p.get("category") && !(j.categories || []).includes(p.get("category"))) return false;
   if (q && !j.title.toLowerCase().includes(q) && !j.company.toLowerCase().includes(q)) return false;
   if (p.get("state") && !j.states.includes(p.get("state"))) return false;
   if (p.get("remote") && !j.remote) return false;
@@ -135,6 +141,20 @@ async function stats() {
   const s = await fetch("/stats").then(r => r.json());
   const med = s.median_detect_minutes == null ? "" : ` · median detect ${Math.round(s.median_detect_minutes)} min`;
   $("#stats").textContent = `${s.companies.toLocaleString()} companies · ${s.active_us_jobs.toLocaleString()} US jobs · ${s.new_last_24h} new today${med}`;
+}
+
+let companyRequest = 0;
+async function companies() {
+  const request = ++companyRequest;
+  const p = new URLSearchParams({q: form.elements.company.value});
+  const rows = await fetch(`/companies?${p}`).then(r => r.json());
+  if (request !== companyRequest) return;
+  $("#companies").replaceChildren(...rows.map(c => new Option(c.name, c.name)));
+}
+
+async function categories() {
+  const rows = await fetch("/categories").then(r => r.json());
+  rows.forEach(c => form.elements.category.add(new Option(c.label, c.id)));
 }
 
 async function states() {
@@ -153,6 +173,10 @@ function live() {
   };
 }
 
+let companyTimer;
+form.elements.company.addEventListener("input", () => {
+  clearTimeout(companyTimer); companyTimer = setTimeout(companies, 200);
+});
 let t;
 form.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => load(true), 250); });
 form.addEventListener("submit", e => e.preventDefault());
@@ -160,7 +184,7 @@ more.onclick = () => load(false);
 setInterval(() => document.querySelectorAll(".age").forEach(el => el.textContent = ago(el.dataset.t)), 30000);
 setInterval(stats, 60000);
 
-load(true); stats(); states(); live();
+load(true); stats(); states(); categories(); companies(); live();
 </script>
 </body>
 </html>

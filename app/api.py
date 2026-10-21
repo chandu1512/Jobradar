@@ -2,11 +2,12 @@ import json
 from pathlib import Path
 
 import redis.asyncio as aioredis
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
 from app import config
+from app.categories import CATEGORIES, PATTERNS, annotate
 from app.db import connect
 
 app = FastAPI(title="JobRadar")
@@ -25,12 +26,15 @@ j.url, j.posted_at, j.first_seen, j.discovered_live
 """
 
 
-def _filters(q, location, state, us, remote, level, hours):
+def _filters(q, location, state, us, remote, level, hours, category="", company=""):
     where = ["j.is_active", "j.first_seen > now() - %(hours)s::int * interval '1 hour'"]
     args = {"hours": hours}
     if q:
         where.append("(j.title ILIKE %(q)s OR c.name ILIKE %(q)s)")
         args["q"] = f"%{q}%"
+    if company:
+        where.append("c.name ILIKE %(company)s")
+        args["company"] = f"%{company}%"
     if location:
         where.append("j.location ILIKE %(loc)s")
         args["loc"] = f"%{location}%"
@@ -44,14 +48,19 @@ def _filters(q, location, state, us, remote, level, hours):
     if level in LEVELS:
         where.append("j.title ~* %(lvl)s AND j.title !~* %(senior)s")
         args |= {"lvl": LEVELS[level], "senior": SENIOR}
+    if category:
+        if category not in PATTERNS:
+            raise HTTPException(status_code=422, detail="Unknown job category")
+        where.append("j.title ~* %(category_pattern)s")
+        args["category_pattern"] = PATTERNS[category]
     return " AND ".join(where), args
 
 
 @app.get("/jobs")
 def list_jobs(q: str = "", location: str = "", state: str = "", us: bool = True, remote: bool = False,
               level: str = "", hours: int = Query(24, le=24 * 90), limit: int = Query(50, le=200),
-              before_id: int | None = None):
-    where, args = _filters(q, location, state, us, remote, level, hours)
+              before_id: int | None = None, category: str = "", company: str = ""):
+    where, args = _filters(q, location, state, us, remote, level, hours, category, company)
     if before_id:
         where += " AND j.id < %(before_id)s"
         args["before_id"] = before_id
@@ -60,7 +69,7 @@ def list_jobs(q: str = "", location: str = "", state: str = "", us: bool = True,
     WHERE {where} ORDER BY j.first_seen DESC, j.id DESC LIMIT %(limit)s
     """
     with connect() as conn:
-        return conn.execute(sql, {**args, "limit": limit}).fetchall()
+        return annotate(conn.execute(sql, {**args, "limit": limit}).fetchall())
 
 
 @app.get("/jobs/stream")
@@ -89,8 +98,22 @@ async def stream(request: Request):
 
 def _jobs_by_id(ids):
     with connect() as conn:
-        return conn.execute(f"SELECT {JOB_COLS} FROM jobs j JOIN companies c ON c.id = j.company_id "
-                            "WHERE j.id = ANY(%s)", (ids,)).fetchall()
+        return annotate(conn.execute(f"SELECT {JOB_COLS} FROM jobs j JOIN companies c ON c.id = j.company_id "
+                            "WHERE j.id = ANY(%s)", (ids,)).fetchall())
+
+
+@app.get("/companies")
+def companies(q: str = "", limit: int = Query(30, ge=1, le=100)):
+    with connect() as conn:
+        return conn.execute(
+            "SELECT DISTINCT name FROM companies WHERE active AND name ILIKE %s "
+            "ORDER BY name LIMIT %s", (f"%{q}%", limit)
+        ).fetchall()
+
+
+@app.get("/categories")
+def categories():
+    return [{"id": key, "label": label} for key, (label, _) in CATEGORIES.items()]
 
 
 @app.get("/states")
