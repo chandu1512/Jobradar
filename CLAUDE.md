@@ -69,3 +69,18 @@ Retry transient failures or revisit empty boards with `probe --retry error,empty
 For SEC collection, pass the contact header into the container explicitly:
 `docker compose run --rm -e SEC_USER_AGENT='JobRadar your@email.com' api python -m app.discovery collect sec`.
 The scheduler automatically picks up promoted companies for their first backfill.
+
+## Job categories
+
+`app/categories.py` owns title rules for role families such as AI/ML, software, data analysis,
+healthcare, and trades. A job can match multiple categories. These describe the role rather
+than the employer industry. They are rule based and can miss unusual titles; they are not an ML classifier.
+`GET /categories` lists category IDs and labels. `/jobs?category=ai_ml` combines the category
+with existing filters in SQL before pagination. Both `/jobs` and SSE payloads include `categories`
+so the UI applies the same category rules to incoming jobs. Existing jobs work immediately,
+without a schema change or backfill. Add patterns compatible with Python and PostgreSQL regexes.
+Run the full test suite with the unittest command above.
+
+`/jobs?company=Stripe` adds a separate company name filter. `/companies?q=str` supplies
+company name suggestions from active companies, capped at 100 results. The UI combines
+company search with category, title, location, and level filters.
