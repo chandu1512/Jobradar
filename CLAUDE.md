@@ -19,7 +19,7 @@ Everything runs via Docker Compose (OrbStack on macOS). Services: `postgres`, `r
 - After changing `app/location.py`: `docker compose run --rm api python -m app.backfill_location`.
 - App code is baked into the image (`COPY . .`), so run `docker compose build` after code changes before `docker compose run`.
 
-Lint: `docker run --rm -v "$PWD":/src -w /src ghcr.io/astral-sh/ruff:0.6.9 check .` (config in `ruff.toml`; ruff is not installed on the host or in `requirements.txt`). No tests are configured.
+Lint: `docker run --rm -v "$PWD":/src -w /src ghcr.io/astral-sh/ruff:0.6.9 check .` (config in `ruff.toml`; ruff is not installed on the host or in `requirements.txt`). Discovery tests: `docker compose run --rm --no-deps api python -m unittest discover -s tests -v` (build the API image first). Tests use HTTP fixtures, without public requests or database writes.
 
 ## Gotchas
 
@@ -46,3 +46,26 @@ Later: dedup (MinHash plus embeddings), ghost job detector, O*NET title normaliz
 ## Git
 
 Solo project: commit directly to `main`.
+
+## Company discovery architecture
+
+- `app/discovery/sources.py` owns collection and slug normalization. Common Crawl supplies observed board URLs; YC and SEC supply company names used to generate guesses for each supported ATS. These sources do not guarantee US coverage; job location filtering happens after crawling.
+- `app/discovery/__main__.py` writes candidates in batches of 1,000. The `(ats, slug)` unique key makes repeated collection safe. Counts report candidates offered, not newly inserted rows. The first source retained for a candidate is its provenance.
+- `app/discovery/probe.py` validates batches of 500 with a separate concurrency semaphore for each ATS. A semaphore caps simultaneous requests; this is not a strict requests per second rate limit. Each request also has a short pacing delay.
+- Probe states are `pending`, `valid`, `empty`, `invalid`, `mismatch`, and `error`. Only `valid` boards are promoted. Candidate updates and company promotion share a transaction. Malformed responses become `error` without aborting the batch.
+- Greenhouse guessed names are compared with the board name. Lever and Ashby lack this identity check, so guessed matches remain a known source of false positives. State registry collection is not implemented yet.
+- A probe run captures its start time so retries visit each candidate at most once during that run. Concurrent probe processes are not coordinated; run one probe process at a time.
+
+Start with a bounded discovery run:
+
+```sh
+docker compose build api
+docker compose run --rm api python -m app.discovery collect commoncrawl --crawls 1 --max-pages 1
+docker compose run --rm api python -m app.discovery probe --source commoncrawl --limit 100 --concurrency 4
+docker compose run --rm api python -m app.discovery stats
+```
+
+Retry transient failures or revisit empty boards with `probe --retry error,empty --limit 100`.
+For SEC collection, pass the contact header into the container explicitly:
+`docker compose run --rm -e SEC_USER_AGENT='JobRadar your@email.com' api python -m app.discovery collect sec`.
+The scheduler automatically picks up promoted companies for their first backfill.
