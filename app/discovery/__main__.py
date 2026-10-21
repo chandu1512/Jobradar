@@ -44,18 +44,25 @@ def stats():
     print(f"active companies: {companies}")
 
 
+def positive_int(value):
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be positive")
+    return number
+
+
 def main():
     p = argparse.ArgumentParser(prog="python -m app.discovery")
     sub = p.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("collect")
     c.add_argument("source", choices=SOURCES)
-    c.add_argument("--crawls", type=int, default=3, help="commoncrawl: how many recent crawls")
-    c.add_argument("--max-pages", type=int, help="commoncrawl: cap index pages per host per crawl")
+    c.add_argument("--crawls", type=positive_int, default=3, help="commoncrawl: how many recent crawls")
+    c.add_argument("--max-pages", type=positive_int, help="commoncrawl: cap index pages per host per crawl")
     pr = sub.add_parser("probe")
     pr.add_argument("--retry", default="", help="also reprobe these statuses, e.g. empty,error")
     pr.add_argument("--source", default="", help="only candidates whose source starts with this")
-    pr.add_argument("--limit", type=int)
-    pr.add_argument("--concurrency", type=int, default=8, help="parallel requests per ATS")
+    pr.add_argument("--limit", type=positive_int)
+    pr.add_argument("--concurrency", type=positive_int, default=8, help="parallel requests per ATS")
     sub.add_parser("stats")
     a = p.parse_args()
 

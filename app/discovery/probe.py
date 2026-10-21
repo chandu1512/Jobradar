@@ -26,23 +26,30 @@ def _words(s):
     return {w for w in re.split(r"[^a-z0-9]+", (s or "").lower()) if len(w) > 2}
 
 
+def _job_count(payload, key=None):
+    jobs = payload[key] if key else payload
+    if not isinstance(jobs, list) or any(not isinstance(job, dict) or "id" not in job for job in jobs):
+        raise ValueError("invalid ATS jobs payload")
+    return len(jobs)
+
+
 async def _greenhouse(client, slug):
     r = await client.get(f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs")
     if r.status_code != 200:
         return r.status_code, None, 0
-    jobs = len(r.json().get("jobs", []))
+    jobs = _job_count(r.json(), "jobs")
     b = await client.get(f"https://boards-api.greenhouse.io/v1/boards/{slug}")
     return 200, (b.json().get("name") if b.status_code == 200 else None), jobs
 
 
 async def _lever(client, slug):
     r = await client.get(f"https://api.lever.co/v0/postings/{slug}", params={"mode": "json", "limit": 1})
-    return r.status_code, None, (len(r.json()) if r.status_code == 200 else 0)
+    return r.status_code, None, (_job_count(r.json()) if r.status_code == 200 else 0)
 
 
 async def _ashby(client, slug):
     r = await client.get(f"https://api.ashbyhq.com/posting-api/job-board/{slug}")
-    return r.status_code, None, (len(r.json().get("jobs", [])) if r.status_code == 200 else 0)
+    return r.status_code, None, (_job_count(r.json(), "jobs") if r.status_code == 200 else 0)
 
 
 PROBES = {"greenhouse": _greenhouse, "lever": _lever, "ashby": _ashby}
@@ -65,7 +72,7 @@ async def _check(client, sems, c):
     async with sems[c["ats"]]:
         try:
             code, board_name, jobs = await PROBES[c["ats"]](client, c["slug"])
-        except (httpx.HTTPError, ValueError):
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
             code, board_name, jobs = None, None, None
         await asyncio.sleep(0.2)
     status = classify(c, code, board_name, jobs or 0)
@@ -73,6 +80,8 @@ async def _check(client, sems, c):
 
 
 async def run(statuses=("pending",), source="", limit=None, batch=500, concurrency=8):
+    if concurrency < 1 or batch < 1 or (limit is not None and limit < 1):
+        raise ValueError("concurrency, batch and limit must be positive")
     sems = {ats: asyncio.Semaphore(concurrency) for ats in PROBES}
     totals = {}
     headers = {"User-Agent": "JobRadar/0.1"}

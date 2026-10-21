@@ -65,22 +65,30 @@ def _get(client, url, tries=6, **kw):
         try:
             r = client.get(url, **kw)
             if r.status_code < 500 and r.status_code != 429:
+                if r.status_code != 404:
+                    r.raise_for_status()
                 return r
         except httpx.TransportError:
             pass
-        time.sleep(min(60, 2 ** i))
+        if i + 1 < tries:
+            time.sleep(min(60, 2 ** i))
     raise RuntimeError(f"gave up on {url}")
 
 
 def commoncrawl(client, crawls=3, max_pages=None):
     """Board URLs from the Common Crawl CDX index. Slugs come straight from the URL."""
+    if crawls < 1 or (max_pages is not None and max_pages < 1):
+        raise ValueError("crawls and max_pages must be positive")
     infos = _get(client, "https://index.commoncrawl.org/collinfo.json").json()[:crawls]
     seen = set()
     for info in infos:
         api = info["cdx-api"]
         for host in CC_HOSTS:
             q = {"url": f"{host}/*", "output": "json", "fl": "url"}
-            pages = _get(client, api, params={**q, "showNumPages": "true"}).json()["pages"]
+            response = _get(client, api, params={**q, "showNumPages": "true"})
+            if response.status_code == 404:
+                continue
+            pages = response.json()["pages"]
             for page in range(min(pages, max_pages or pages)):
                 r = _get(client, api, params={**q, "page": page}, timeout=120)
                 if r.status_code == 404:  # no captures for this host in this crawl
