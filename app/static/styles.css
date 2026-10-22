@@ -1,16 +1,16 @@
 :root {
   color-scheme: light;
-  --bg: #f7f8fb;
+  --bg: #f7f5f0;
   --surface: #fff;
-  --text: #202436;
-  --muted: #71768a;
-  --line: #e8eaf1;
-  --accent: #6558d9;
-  --accent-hover: #5143bd;
-  --soft: #efedfc;
+  --text: #182c3d;
+  --muted: #6b746f;
+  --line: #e5e2d9;
+  --accent: #b34b27;
+  --accent-hover: #913b1e;
+  --soft: #faede4;
   --green: #19836a;
   --green-soft: #e9f6f0;
-  --shadow: 0 4px 24px #20243604;
+  --shadow: 0 4px 24px #182c3d06;
   --radius: 16px;
 }
 * {
@@ -508,8 +508,8 @@ select {
   box-shadow: var(--shadow);
 }
 .job-card:hover {
-  border-color: #c9c3ed;
-  box-shadow: 0 5px 24px #6558d909;
+  border-color: #dcbda9;
+  box-shadow: 0 5px 24px #b34b2709;
 }
 .company-avatar {
   width: 44px;
@@ -1013,28 +1013,28 @@ select {
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --bg: #13151e;
-    --surface: #1c1e2a;
-    --text: #eff0f8;
-    --muted: #9b9fb3;
-    --line: #2d3040;
-    --accent: #ada1ff;
-    --accent-hover: #c2b9ff;
-    --soft: #302a4a;
+    --bg: #111c24;
+    --surface: #1a2933;
+    --text: #f4f1e9;
+    --muted: #adb7bb;
+    --line: #30414a;
+    --accent: #f1ac7e;
+    --accent-hover: #ffc39b;
+    --soft: #3c3029;
     --green: #70cdb0;
     --green-soft: #20392f;
     --shadow: none;
   }
   .brand-mark,
   .chip.active {
-    background: #7765d8;
+    background: #a84927;
     color: white;
   }
   .brand-period {
     color: var(--accent);
   }
   .job-card:hover {
-    border-color: #6c609b;
+    border-color: #9b7258;
   }
   .company-avatar.tone-1 {
     background: #253745;
@@ -1053,10 +1053,10 @@ select {
     color: #f7b9a8;
   }
   .toggle {
-    background: #45495d;
+    background: #49565c;
   }
   .remote-option input:checked + .toggle {
-    background: #7765d8;
+    background: #a84927;
   }
 }
 @media (prefers-reduced-motion: reduce) {
