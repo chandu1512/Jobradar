@@ -111,6 +111,19 @@ def companies(q: str = "", limit: int = Query(30, ge=1, le=100)):
         ).fetchall()
 
 
+@app.get("/coverage")
+def coverage(company: str = Query(..., min_length=1, max_length=200)):
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT c.id, c.name, c.ats, c.last_status, c.last_crawled_at, "
+            "count(j.id) FILTER (WHERE j.is_active) AS active_jobs "
+            "FROM companies c LEFT JOIN jobs j ON j.company_id=c.id "
+            "WHERE c.active AND c.name ILIKE %s GROUP BY c.id ORDER BY c.name LIMIT 30",
+            (f"%{company.strip()}%",)
+        ).fetchall()
+    return {"covered": bool(rows), "companies": rows}
+
+
 @app.get("/categories")
 def categories():
     return [{"id": key, "label": label} for key, (label, _) in CATEGORIES.items()]

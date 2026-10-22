@@ -78,6 +78,7 @@ li.fresh { animation: flash 3s ease-out; }
   </div>
 </header>
 <main class="wrap">
+  <p class="stats" id="coverage" role="status" hidden></p>
   <ul id="list"></ul>
   <button class="more" id="more" hidden>Load more</button>
 </main>
@@ -85,6 +86,7 @@ li.fresh { animation: flash 3s ease-out; }
 const $ = s => document.querySelector(s);
 const form = $("#f"), list = $("#list"), more = $("#more");
 let lastId = null;
+let loadRequest = 0;
 
 const ago = t => {
   const m = Math.max(0, (Date.now() - new Date(t)) / 60000);
@@ -115,14 +117,52 @@ function row(j, fresh) {
 }
 
 async function load(reset) {
+  const request = ++loadRequest;
   const p = params(); p.set("limit", 50);
   if (!reset && lastId) p.set("before_id", lastId);
   const jobs = await fetch(`/jobs?${p}`).then(r => r.json());
-  if (reset) list.innerHTML = "";
+  if (request !== loadRequest) return;
+  if (reset) {
+    lastId = null;
+    list.innerHTML = "";
+    updateCoverage(p.get("company"), request);
+  }
   jobs.forEach(j => list.append(row(j)));
   lastId = jobs.length ? jobs[jobs.length - 1].id : lastId;
   more.hidden = jobs.length < 50;
-  if (reset && !jobs.length) list.innerHTML = '<div class="empty">No matching jobs in this window.</div>';
+  if (reset && !jobs.length) list.innerHTML = '<div class="empty">No matching indexed jobs in this window. Use the Company field to check employer coverage.</div>';
+}
+
+async function updateCoverage(company, request) {
+  const notice = $("#coverage");
+  notice.hidden = true;
+  if (!company?.trim()) return;
+  try {
+    const response = await fetch(`/coverage?${new URLSearchParams({company})}`);
+    if (!response.ok) throw new Error("Coverage unavailable");
+    const coverage = await response.json();
+    if (request !== loadRequest) return;
+    notice.hidden = false;
+    if (!coverage.covered) {
+      notice.textContent = `Company not covered yet: ${company}. This does not mean it has no openings.`;
+      return;
+    }
+    const companies = coverage.companies;
+    const count = companies.reduce((sum, c) => sum + Number(c.active_jobs), 0);
+    const pending = companies.some(c => !c.last_crawled_at);
+    const errors = companies.some(c => c.last_status === "error");
+    const partial = companies.some(c => c.ats === "amazon");
+    notice.textContent = `${count.toLocaleString()} active indexed jobs across matching companies. ` +
+      (pending ? "Initial collection is pending. " : "") +
+      (errors ? "Some sources have crawl errors. " : "") +
+      (partial ? "Amazon coverage is limited to a recent US window; closure status may be stale. " : "") +
+      "Your selected filters may show fewer results.";
+  } catch {
+    if (request === loadRequest) {
+      notice.hidden = false;
+      notice.textContent = "Company coverage could not be checked. Try again.";
+    }
+  }
 }
 
 function matches(j) {
