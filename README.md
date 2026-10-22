@@ -327,3 +327,55 @@ minute with a half-second pause between requests, independently of the discovery
 It updates posting evidence without changing first_seen or publishing new-job events.
 The API has `/health`; the public tunnel waits for healthy startup. A pinned ngrok address
 and readiness checks do not provide uptime while the host Mac is offline.
+
+### Private application sync and hunt filters
+
+The page's **Mark applied** button creates a private workspace. **Sync private application
+history → Copy sync token** lets your other browser or tools connect to the same history.
+Keep that token private; it grants access to your application records. Public visitors do
+not see your application state. History persists in PostgreSQL across app/tunnel restarts.
+
+API sequence:
+- `POST /workspaces` returns a workspace ID and secret token (save it securely).
+- Send `Authorization: Bearer <token>` on private requests.
+- `POST /applications` accepts one object or an array (up to 1000):
+  `{"company":"Example","title":"Data Analyst","url":"https://example.com/jobs/123"}`.
+  Optional `applied_at` records the original application time. Repeated URL sync is idempotent.
+- `GET /applications` exports your records; `before_id` paginates past 1000.
+- `DELETE /applications/{id}` undoes a mark, only in your workspace.
+- `/jobs?applied=exclude` hides matched applications; `applied=only` returns them.
+  Tracking parameters are ignored but meaningful job IDs are preserved. Same-company/title
+  matches with different URLs are marked `previously_applied_similar` for review, not silently hidden.
+
+`/jobs?min_comp=70000&comp_interval=year&comp_currency=USD` excludes jobs whose maximum
+comparable annual pay is below the floor. For interns, use `min_comp=25&comp_interval=hour`.
+Unknown currency/period stays visible by default; `keep_unknown_pay=false` requests only
+comparable disclosed pay. No guessed conversion between hourly and annual pay.
+
+`level=entry_body` finds explicit early-career/0–2 years evidence in descriptions and
+excludes senior titles. Conflicting higher-experience requirements are labeled for review.
+`entry_level` includes evidence; `start_dates` includes explicit employment start dates,
+with day/month precision. `available_from=2027-03-01` excludes known earlier starts while
+retaining unstated dates and ambiguous month-only dates for review.
+
+Sponsor history is separate from JD sponsorship. Import reviewed JSON records with
+`docker compose run --rm api python -m app.history_import data/history.json`:
+`[{"company_id":123,"fiscal_year":2025,"filings_count":10,"record_type":"lca_filings",
+"source_url":"https://www.dol.gov/agencies/eta/foreign-labor/performance","employer_name":"Exact legal employer"}]`.
+Use `/coverage?company=...` to find company IDs and explicitly review employer aliases.
+Allowed record types: `lca_filings`, `petition_approvals`, `user_ranked_history`.
+No record means unknown; LCA filings are not visa approvals or a job sponsorship promise.
+`/jobs?sponsor_history_only=true` filters to recorded positive counts.
+
+`reactivation_count` / `reactivated_at` record an observed inactive-to-active transition
+starting with this release; `reactivated_only=true` filters these. `possible_repost_of`
+links older inactive postings with the exact same company, title and location. These are
+candidates for review, not confirmed reposts, and old transitions cannot be reconstructed.
+
+Apply migration `004_hunt_state.sql` before deploying. Run `python -m app.backfill_identity`
+inside the API container once for existing URL identities. Workers refresh description
+signals on normal crawls. Description enrichment covers SmartRecruiters, Greenhouse and
+Lever; unavailable/empty upstream descriptions remain explicitly unknown.
+
+Opt-in real database regression checks (use temporary tables, not real job mutations):
+`docker compose run --rm --no-deps -e JOBRADAR_DB_TESTS=1 api python -m unittest discover -s tests -p test_hunt_database.py -v`.

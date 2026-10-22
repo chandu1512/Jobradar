@@ -1021,3 +1021,21 @@ select {
     transition: none !important;
   }
 }
+
+input[type="number"], input[type="date"], input[type="password"] {
+  width: 100%; min-width: 0; max-width: 100%; height: 44px;
+  border: 1px solid var(--line); border-radius: 8px; padding: 0 10px;
+  background: white; color: var(--text); font: inherit;
+}
+.application-button, #workspace-connect, #workspace-copy {
+  border: 1px solid var(--line); border-radius: 7px; padding: 8px 12px;
+  background: white; color: var(--text); font-size: 11px; min-height: 40px;
+}
+.application-button:hover, #workspace-connect:hover, #workspace-copy:hover {
+  border-color: var(--accent); color: var(--accent);
+}
+#workspace-status, .field small { font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .job-side { flex-wrap: wrap; }
+  input[type="number"], input[type="date"], input[type="password"] { font-size: 16px; }
+}

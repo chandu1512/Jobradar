@@ -5,6 +5,17 @@ const form = $("#f"),
 let lastId = null;
 let loadRequest = 0;
 let categoryLabels = {};
+let workspaceToken = localStorage.getItem("jobradar.workspace") || "";
+const authHeaders = () => workspaceToken ? {Authorization: `Bearer ${workspaceToken}`} : {};
+async function ensureWorkspace() {
+  if (!workspaceToken) {
+    const response = await fetch("/workspaces", {method: "POST"});
+    if (!response.ok) throw new Error("Could not create workspace");
+    workspaceToken = (await response.json()).token;
+    localStorage.setItem("jobradar.workspace", workspaceToken);
+  }
+}
+
 
 const ago = (t) => {
   const m = Math.max(0, (Date.now() - new Date(t)) / 60000);
@@ -21,9 +32,9 @@ const esc = (s) =>
 function params() {
   const fd = new FormData(form),
     p = new URLSearchParams();
-  for (const k of ["q", "company", "category", "level", "state", "hours", "sponsorship", "requirement"])
+  for (const k of ["q", "company", "category", "level", "state", "hours", "sponsorship", "requirement", "applied", "min_comp", "comp_interval", "available_from"])
     if (fd.get(k)) p.set(k, fd.get(k));
-  for (const key of ["remote", "salary_disclosed", "opt_mentioned"])
+  for (const key of ["remote", "salary_disclosed", "opt_mentioned", "sponsor_history_only", "reactivated_only"])
     if (fd.get(key)) p.set(key, "true");
   return p;
 }
@@ -58,7 +69,11 @@ function row(j, fresh) {
   const visa = {offered: "Sponsorship offered", not_offered: "Sponsorship not offered", conflicting: "Conflicting sponsorship statements", unknown: "Sponsorship unknown"}[j.sponsorship?.status || "unknown"];
   const findings = j.requirements?.findings || [];
   const requirementLabels = {experience: "Experience requirement", doctoral_degree: "PhD mentioned", work_authorization: "Authorization restriction mentioned", enrollment: "Enrollment mentioned", graduation_window: "Graduation window"};
+  const history = j.sponsor_history || [];
+  const historyLabel = history.length ? history.map(h => `FY${h.fiscal_year}: ${h.filings_count} ${h.record_type.replaceAll("_", " ")}`).join("; ") : "Sponsor history: unknown";
+  const startLabel = (j.start_dates || []).map(d => `${d.date} (${d.precision})`).join("; ");
   const evidence = [...(j.sponsorship?.evidence || []), ...(j.salary?.evidence || []),
+    ...(j.entry_level?.evidence || []), ...(j.start_dates || []).map(d => d.evidence),
     ...findings.map(f => `${requirementLabels[f.type]} (${f.qualification}): ${f.evidence}`)];
   li.innerHTML = `
     <div class="company-avatar tone-${tone}" aria-hidden="true">${esc(initials)}</div>
@@ -67,14 +82,37 @@ function row(j, fresh) {
       <h3 class="job-title"><a href="${href}" target="_blank" rel="noopener noreferrer">${esc(j.title)}</a></h3>
       <p class="job-location" title="${esc(j.location || "Location not specified")}"><span aria-hidden="true">⌖</span>${esc(j.location || "Location not specified")}</p>
       <div class="job-tags">${category ? `<span class="tag">${esc(category)}</span>` : ""}
+        ${j.applied ? '<span class="tag">Applied</span>' : j.previously_applied_similar ? '<span class="tag">Similar role previously applied — review</span>' : ""}
+        ${j.possible_repost_of?.length ? '<span class="tag">Possible repost — review</span>' : ""}
+        ${j.reactivation_count ? '<span class="tag">Seen active again</span>' : ""}
+        ${j.entry_level?.status === "entry_evidence" ? '<span class="tag">Entry evidence in JD</span>' : ""}
         ${j.remote ? '<span class="tag remote">Remote</span>' : ""}
         ${[...new Set(findings.map(f => f.type))].map(t => `<span class="tag">${esc(requirementLabels[t])}</span>`).join("")}
         ${j.discovered_live ? '<span class="tag new">New discovery</span>' : '<span class="tag">Company careers</span>'}</div>
       <p class="job-location">${esc(pay || (j.signals?.description_available ? "Salary not found in available text" : "Description unavailable — salary unknown"))} · ${esc(visa)}${j.opt?.mentioned ? " · OPT / CPT mentioned" : ""}</p>
+      <p class="job-location">${esc(historyLabel)}${startLabel ? ` · Start: ${esc(startLabel)}` : ""}</p>
       ${evidence.length ? `<details><summary>Posting evidence</summary>${evidence.map(s => `<p>${esc(s)}</p>`).join("")}<small>Mentions do not establish work authorization eligibility. Verify the linked posting.</small></details>` : ""}
     </div>
     <div class="job-side"><span class="age" data-t="${esc(j.first_seen)}">Found ${ago(j.first_seen)}</span>
-      <a class="apply-link" href="${href}" target="_blank" rel="noopener noreferrer" aria-label="${esc(`View ${j.title} at ${company}, opens a new tab`)}">View role <span aria-hidden="true">↗</span></a></div>`;
+      <a class="apply-link" href="${href}" target="_blank" rel="noopener noreferrer" aria-label="${esc(`View ${j.title} at ${company}, opens a new tab`)}">View role <span aria-hidden="true">↗</span></a>
+      <button type="button" class="application-button">${j.applied ? "Undo applied" : "Mark applied"}</button></div>`;
+  li.querySelector(".application-button").onclick = async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      await ensureWorkspace();
+      const response = j.applied ? await fetch(`/applications/${j.application_id}`, {method: "DELETE", headers: authHeaders()}) :
+        await fetch("/applications", {method: "POST", headers: {...authHeaders(), "Content-Type": "application/json"},
+          body: JSON.stringify([{company: j.company, title: j.title, url: j.url}])});
+      if (!response.ok) throw new Error(`Application sync failed: ${response.status}`);
+      $("#workspace-status").textContent = "Private workspace connected. Applications sync with this token.";
+      if (!j.applied) form.elements.applied.value = "exclude";
+      await load(true);
+    } catch (error) {
+      $("#workspace-status").textContent = error.message;
+      button.disabled = false;
+    }
+  };
   return li;
 }
 
@@ -98,7 +136,7 @@ function resultCount() {
 async function getJson(url) {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = await fetch(url, {signal: AbortSignal.timeout(15000)});
+      const response = await fetch(url, {signal: AbortSignal.timeout(15000), headers: authHeaders()});
       if (!response.ok) {
         if ([502, 503, 504].includes(response.status) && attempt < 2) {
           await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
@@ -117,6 +155,11 @@ async function getJson(url) {
 async function load(reset) {
   const request = ++loadRequest;
   const p = params();
+  if (p.get("applied") !== "all" && !workspaceToken) {
+    $("#workspace-status").textContent = "Mark a role applied or connect your sync token first.";
+    form.elements.applied.value = "all";
+    p.set("applied", "all");
+  }
   p.set("limit", 50);
   syncFilters();
   if (!reset && lastId) p.set("before_id", lastId);
@@ -217,6 +260,7 @@ function matches(j) {
   if (p.get("salary_disclosed") && !j.salary?.ranges?.length) return false;
   if (p.get("opt_mentioned") && !j.opt?.mentioned) return false;
   if (p.get("requirement") && !j.requirements?.findings?.some(f => f.type === p.get("requirement"))) return false;
+  if (p.get("applied") !== "all" || p.get("min_comp") || p.get("available_from") || p.get("sponsor_history_only") || p.get("reactivated_only")) return false;
   if (p.get("level")) return false; // level regex lives server side; the next reload picks these up
   return true;
 }
@@ -328,7 +372,26 @@ function layoutFilters() {
 layoutFilters();
 mobile.addEventListener("change", layoutFilters);
 
+$("#workspace-connect").onclick = async () => {
+  const candidate = $("#workspace-token").value.trim();
+  try {
+    const response = await fetch("/applications?limit=1", {headers: {Authorization: `Bearer ${candidate}`}});
+    if (!response.ok) throw new Error("Invalid workspace token");
+    workspaceToken = candidate;
+    localStorage.setItem("jobradar.workspace", candidate);
+    $("#workspace-token").value = "";
+    $("#workspace-status").textContent = "Private workspace connected.";
+    form.elements.applied.value = "exclude";
+    load(true);
+  } catch (error) { $("#workspace-status").textContent = error.message; }
+};
+$("#workspace-copy").onclick = async () => {
+  try { await ensureWorkspace(); await navigator.clipboard.writeText(workspaceToken);
+    $("#workspace-status").textContent = "Sync token copied. Keep it private; it grants access to your application history.";
+  } catch { $("#workspace-status").textContent = "Clipboard unavailable. Use this browser's private workspace."; }
+};
 async function start() {
+  if (workspaceToken) form.elements.applied.value = "exclude";
   await Promise.allSettled([categories(), states(), companies(), stats()]);
   load(true);
   live();

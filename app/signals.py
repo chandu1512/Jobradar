@@ -2,6 +2,7 @@
 import html
 import re
 
+from app.entry_level import classify
 from app.requirements import screen
 
 
@@ -10,6 +11,8 @@ def enrich(raw, url):
              'description', 'additionalPlain', 'basic_qualifications', 'preferred_qualifications')]
     parts += [item.get('content', '') for item in raw.get('lists', [])]
     detail = raw.get('_detail') or raw
+    if '_detail' in raw:
+        parts += [detail.get(k, '') for k in ('content', 'descriptionPlain', 'description')]
     sections = (detail.get('jobAd') or {}).get('sections') or {}
     parts += [s.get('text', '') for s in sections.values() if isinstance(s, dict)]
     text = html.unescape(html.unescape(' '.join(p for p in parts if isinstance(p, str))))
@@ -67,6 +70,8 @@ def enrich(raw, url):
         value = float(match[1].lower().replace(',', '').replace('k', '').strip())
         value *= 1000 if 'k' in match[1].lower() else 1
         unit = re.search(r'\b(hour|hr|year|annum|annually|annual|month)\b', suffix, re.I)
+        if not unit:
+            unit = re.search(r'\b(hourly|annual|yearly|monthly)\b', prefix, re.I)
         salaries.append({'min': value, 'max': value, 'kind': 'fixed',
                          'currency': 'USD' if 'USD' in context else None,
                          'interval': unit[1].lower() if unit else None, 'source': 'posting_text'})
@@ -77,7 +82,9 @@ def enrich(raw, url):
         if key not in seen_salaries:
             seen_salaries.add(key)
             unique_salaries.append(salary)
-    return {'requirements': screen(text), 'salary': {'ranges': unique_salaries, 'evidence': salary_evidence[:8]},
+    entry, starts = classify(text)
+    return {'entry_level': entry, 'start_dates': starts, 'requirements': screen(text),
+            'salary': {'ranges': unique_salaries, 'evidence': salary_evidence[:8]},
             'sponsorship': {'status': status, 'evidence': evidence[:8]},
             'opt': {'mentioned': bool(re.search(training, text, re.I)),
                     'status': 'unknown'}, 'source_url': url,

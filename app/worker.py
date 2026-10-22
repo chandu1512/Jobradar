@@ -9,6 +9,7 @@ from psycopg.types.json import Jsonb
 from app import config
 from app.db import connect
 from app.fetchers import FETCHERS
+from app.hunt import canonical_url
 from app.location import from_raw
 from app.signals import enrich
 
@@ -16,11 +17,14 @@ CONSUMER = os.getenv("HOSTNAME", socket.gethostname())
 
 UPSERT = """
 INSERT INTO jobs (company_id, ext_id, title, location, url, posted_at, discovered_live, raw,
-                  is_us, states, remote, signals, previous_successful_crawl_at)
+                  is_us, states, remote, signals, previous_successful_crawl_at, canonical_url)
 VALUES (%(company_id)s, %(ext_id)s, %(title)s, %(location)s, %(url)s, %(posted_at)s, %(live)s, %(raw)s,
-        %(is_us)s, %(states)s, %(remote)s, %(signals)s, %(previous)s)
+        %(is_us)s, %(states)s, %(remote)s, %(signals)s, %(previous)s, %(canonical_url)s)
 ON CONFLICT (company_id, ext_id) DO UPDATE
-SET title = EXCLUDED.title, location = EXCLUDED.location, url = EXCLUDED.url,
+SET canonical_url = EXCLUDED.canonical_url,
+    reactivation_count = jobs.reactivation_count + CASE WHEN jobs.is_active THEN 0 ELSE 1 END,
+    reactivated_at = CASE WHEN jobs.is_active THEN jobs.reactivated_at ELSE now() END,
+    title = EXCLUDED.title, location = EXCLUDED.location, url = EXCLUDED.url,
     is_us = EXCLUDED.is_us, states = EXCLUDED.states, remote = EXCLUDED.remote,
     signals = CASE WHEN jobs.raw ? '_detail' AND NOT (EXCLUDED.raw ? '_detail')
                    THEN jobs.signals ELSE EXCLUDED.signals END,
@@ -41,7 +45,7 @@ def process(r, client, task):
                 "SELECT last_successful_crawl_at FROM companies WHERE id=%s", (cid,)
             ).fetchone()["last_successful_crawl_at"]
             cached = {}
-            if task['ats'] == 'smartrecruiters':
+            if task['ats'] in {'smartrecruiters', 'greenhouse', 'lever'}:
                 cached = {row['ext_id']: row['detail'] for row in conn.execute(
                     "SELECT ext_id, raw->'_detail' AS detail FROM jobs "
                     "WHERE company_id=%s AND raw ? '_detail'", (cid,)).fetchall()}
@@ -53,6 +57,7 @@ def process(r, client, task):
                 row = conn.execute(UPSERT, {**j, **loc, "company_id": cid,
                                             "live": not first, "raw": Jsonb(j["raw"]),
                                             "signals": Jsonb(enrich(j["raw"], j["url"])),
+                                            "canonical_url": canonical_url(j["url"]),
                                             "previous": previous if getattr(jobs, "complete", True) else None}
                                    ).fetchone()
                 if row["inserted"] and not first:

@@ -19,3 +19,10 @@ class HeadTests(unittest.IsolatedAsyncioTestCase):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
             response = await client.get('/jobs?sponsorship=guaranteed')
             self.assertEqual(response.status_code, 422)
+
+    async def test_application_state_requires_workspace(self):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+            response = await client.post('/applications', json=[{
+                'company': 'Example', 'title': 'Engineer', 'url': 'https://example.com/job'}])
+            self.assertEqual(response.status_code, 401)
+            self.assertEqual((await client.get('/jobs?applied=exclude')).status_code, 401)

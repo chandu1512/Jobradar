@@ -8,20 +8,29 @@ from app.db import connect
 from app.signals import enrich
 
 
-def batch(client):
+def batch(client, before_id=None):
     with connect() as conn:
         rows = conn.execute("""
-            SELECT j.id,j.ext_id,j.url,c.slug FROM jobs j JOIN companies c ON c.id=j.company_id
-            WHERE j.is_active AND j.is_us AND c.ats='smartrecruiters'
+            SELECT j.id,j.ext_id,j.url,c.slug,c.ats FROM jobs j JOIN companies c ON c.id=j.company_id
+            WHERE j.is_active AND j.is_us AND c.ats IN ('smartrecruiters','greenhouse','lever')
+              AND j.signals->>'description_available'='false'
               AND NOT (j.raw ? '_detail')
+              AND (%s::bigint IS NULL OR j.id<%s)
             ORDER BY j.id DESC LIMIT 20
-        """).fetchall()
+        """, (before_id, before_id)).fetchall()
     for row in rows:
         try:
-            response = client.get(f"https://api.smartrecruiters.com/v1/companies/{row['slug']}/postings/{row['ext_id']}")
+            url = (f"https://api.smartrecruiters.com/v1/companies/{row['slug']}/postings/{row['ext_id']}"
+                   if row.get('ats', 'smartrecruiters') == 'smartrecruiters' else
+                   f"https://boards-api.greenhouse.io/v1/boards/{row['slug']}/jobs/{row['ext_id']}")
+            if row.get('ats') == 'lever':
+                url = f"https://api.lever.co/v0/postings/{row['slug']}/{row['ext_id']}"
+            response = client.get(url)
             response.raise_for_status()
             detail = response.json()
-            if str(detail.get('id')) != row['ext_id'] or not isinstance(detail.get('jobAd'), dict):
+            body = detail.get('jobAd', detail.get('content', detail.get('descriptionPlain', detail.get('description'))))
+            if (str(detail.get('id')) != row['ext_id']
+                    or not isinstance(body, dict | str)):
                 raise ValueError('Unexpected posting detail')
             with connect() as conn:
                 current = conn.execute('SELECT raw FROM jobs WHERE id=%s FOR UPDATE', (row['id'],)).fetchone()
@@ -32,13 +41,15 @@ def batch(client):
             print(f"description {row['id']}: {type(error).__name__}", flush=True)
         time.sleep(0.5)
     print(f'description batch: {len(rows)} attempted', flush=True)
+    return rows[-1]['id'] if rows else None
 
 
 def main():
     with httpx.Client(timeout=15, follow_redirects=True) as client:
+        cursor = None
         while True:
             try:
-                batch(client)
+                cursor = batch(client, cursor)
             except Exception as error:
                 print(f'description retry: {type(error).__name__}', flush=True)
             time.sleep(60)
