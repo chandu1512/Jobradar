@@ -164,6 +164,13 @@ async function states() {
 }
 
 function live() {
+  if (location.hostname.endsWith(".trycloudflare.com")) {
+    $("#livetxt").textContent = "updates every 60s";
+    setInterval(() => {
+      if (document.visibilityState === "visible") load(true);
+    }, 60000);
+    return;
+  }
   const es = new EventSource("/jobs/stream");
   es.onopen = () => { $("#dot").className = "dot on"; $("#livetxt").textContent = "live"; };
   es.onerror = () => { $("#dot").className = "dot"; $("#livetxt").textContent = "reconnecting"; };
