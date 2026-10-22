@@ -1,0 +1,12 @@
+# Optional free ngrok route. Keep its token in the ignored .env file.
+# Start only this service to preserve the running API and worker scale.
+services:
+  ngrok:
+    image: ngrok/ngrok:latest
+    restart: unless-stopped
+    profiles: [public]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?Set NGROK_AUTHTOKEN in your local .env file}
+    command: [http, 'http://api:8000', --log, stdout, --log-format, json]
+    depends_on:
+      - api

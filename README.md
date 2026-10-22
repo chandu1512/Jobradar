@@ -243,3 +243,35 @@ temporary and the Mac and Docker must remain running. If an automated client rec
 403, capture the response body and Cloudflare headers: the application has no API authentication
 or bot block, but an intermediary may reject individual clients. The running tunnel is outside
 Compose; stop it with `docker stop jobradar-public-direct`.
+
+## Alternative public route for automated clients
+
+The accountless Cloudflare Quick Tunnel has no zone firewall dashboard under this project.
+A client specific 403 cannot be fixed by adding application CORS headers or changing a
+User-Agent. Use the optional ngrok route to test a different public ingress provider while
+keeping the existing link running. This is still hosted on the Mac, not an independent server.
+
+1. Create a free account at [ngrok](https://dashboard.ngrok.com/signup).
+2. Obtain your authtoken from its dashboard. Add `NGROK_AUTHTOKEN=your_token` to the local
+   `.env` file, preserving any existing entries. This file is ignored by Git. Never post the token.
+3. Start just the optional tunnel:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.public.yml up -d --no-deps ngrok
+docker compose -f docker-compose.yml -f docker-compose.public.yml logs --tail=30 ngrok
+```
+
+The startup log provides the HTTPS address. API clients should send
+`ngrok-skip-browser-warning: 1` when requesting `/jobs` and `/stats`; humans may see ngrok's
+free plan browser notice. Verify the route from the actual automated client before assuming
+the egress problem is resolved. API responses include `X-JobRadar-Origin: api`, which helps
+distinguish application responses from upstream rejection pages.
+
+The free plan currently includes 1 GB monthly outbound traffic and 20,000 HTTP requests.
+It is suitable for a small demo, not unrestricted daily crawling of the entire database.
+Check [current limits](https://ngrok.com/docs/pricing-limits/free-plan-limits) before use.
+Stop the alternate route with:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.public.yml stop ngrok
+```

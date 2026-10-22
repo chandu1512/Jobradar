@@ -13,6 +13,14 @@ from app.db import connect
 app = FastAPI(title="JobRadar")
 STATIC = Path(__file__).parent / "static"
 
+
+@app.middleware("http")
+async def mark_origin(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-JobRadar-Origin"] = "api"
+    return response
+
+
 LEVELS = {
     "newgrad": r"(new\s*grad|entry[\s-]*level|early[\s-]*career|graduate|university|campus|junior"
                r"|associate\s+(software|engineer|data)|\m(i|1)\M\s*$|engineer\s+(i|1)\M)",

@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+CLAUDE.local.md
+.agents
+.codex
+.aws
+venv
+__pycache__
+*.pyc
+.ruff_cache
