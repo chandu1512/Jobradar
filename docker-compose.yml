@@ -4,7 +4,7 @@ x-app: &app
   environment:
     DATABASE_URL: postgresql://jobradar:jobradar@postgres:5432/jobradar
     REDIS_URL: redis://redis:6379/0
-    CRAWL_INTERVAL_MIN: "15"
+    CRAWL_INTERVAL_MIN: "${CRAWL_INTERVAL_MIN:-5}"
   depends_on:
     postgres: { condition: service_healthy }
     redis: { condition: service_started }

@@ -7,14 +7,14 @@ def _ms(ms):
     return datetime.fromtimestamp(ms / 1000, tz=UTC) if ms else None
 
 def greenhouse(client, slug):
-    r = client.get(f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs")
+    r = client.get(f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true")
     r.raise_for_status()
     return [{
         "ext_id": str(j["id"]),
         "title": j["title"],
         "location": (j.get("location") or {}).get("name"),
         "url": j["absolute_url"],
-        "posted_at": j.get("first_published") or j.get("updated_at"),
+        "posted_at": j.get("first_published"),
         "raw": j,
     } for j in r.json().get("jobs", [])]
 
@@ -31,7 +31,7 @@ def lever(client, slug):
     } for j in r.json()]
 
 def ashby(client, slug):
-    r = client.get(f"https://api.ashbyhq.com/posting-api/job-board/{slug}")
+    r = client.get(f"https://api.ashbyhq.com/posting-api/job-board/{slug}?includeCompensation=true")
     r.raise_for_status()
     return [{
         "ext_id": j["id"],

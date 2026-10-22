@@ -286,3 +286,25 @@ The page keeps a white background regardless of system theme and respects reduce
 Search has request ordering protection, loading and error states, reset controls, and
 company coverage messages. Role category shortcuts reuse the existing API filters.
 No frontend build process or external fonts are required.
+
+### Posting evidence and detection measurements
+
+`/jobs` now includes `salary`, `sponsorship`, `opt`, and `signals`. Evidence comes from the
+posting and includes its source URL. Sponsorship status is `offered`, `not_offered`,
+`conflicting`, or `unknown`; OPT mentions do not establish eligibility. Missing salary
+currency or interval remains null. Filters: `sponsorship=offered`, `opt_mentioned=true`,
+`salary_disclosed=true`. Coverage depends on the source exposing description/compensation.
+Greenhouse requests full content and Ashby requests compensation on subsequent crawls.
+Backfill existing raw data with `python -m app.backfill_signals` inside the API container.
+
+The crawl interval defaults to 5 minutes (override `CRAWL_INTERVAL_MIN`).
+`median_detect_minutes` remains the legacy posting-age metric, also explicitly named
+`median_posting_age_at_detection_minutes`. It includes upstream timestamp delays.
+`median_observation_gap_minutes` measures the upper bound since the preceding successful
+complete feed crawl for newly observed jobs over 24 hours, with `observation_gap_samples`.
+It excludes partial Amazon feeds and cannot reconstruct old observation bounds.
+
+The ngrok overlay pins the existing account domain; override `NGROK_URL` for another
+account. Free ngrok still requires the Mac and Docker to run and presents a browser
+notice; automated callers use request header `ngrok-skip-browser-warning: 1`.
+This is public tunneling, not independent permanent hosting.

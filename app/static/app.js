@@ -21,9 +21,10 @@ const esc = (s) =>
 function params() {
   const fd = new FormData(form),
     p = new URLSearchParams();
-  for (const k of ["q", "company", "category", "level", "state", "hours"])
+  for (const k of ["q", "company", "category", "level", "state", "hours", "sponsorship"])
     if (fd.get(k)) p.set(k, fd.get(k));
-  if (fd.get("remote")) p.set("remote", "true");
+  for (const key of ["remote", "salary_disclosed", "opt_mentioned"])
+    if (fd.get(key)) p.set(key, "true");
   return p;
 }
 
@@ -52,6 +53,10 @@ function row(j, fresh) {
     .map((c) => categoryLabels[c])
     .find(Boolean);
   const href = esc(safeUrl(j.url));
+  const ranges = j.salary?.ranges || [];
+  const pay = ranges.map(r => `${r.currency || "$ (currency unspecified)"} ${Number(r.min).toLocaleString()}–${Number(r.max).toLocaleString()}${r.interval ? ` / ${r.interval}` : " (period unspecified)"}`).join("; ");
+  const visa = {offered: "Sponsorship offered", not_offered: "Sponsorship not offered", conflicting: "Conflicting sponsorship statements", unknown: "Sponsorship unknown"}[j.sponsorship?.status || "unknown"];
+  const evidence = [...(j.sponsorship?.evidence || []), ...(j.salary?.evidence || [])];
   li.innerHTML = `
     <div class="company-avatar tone-${tone}" aria-hidden="true">${esc(initials)}</div>
     <div class="job-info">
@@ -61,6 +66,8 @@ function row(j, fresh) {
       <div class="job-tags">${category ? `<span class="tag">${esc(category)}</span>` : ""}
         ${j.remote ? '<span class="tag remote">Remote</span>' : ""}
         ${j.discovered_live ? '<span class="tag new">New discovery</span>' : '<span class="tag">Company careers</span>'}</div>
+      <p class="job-location">${esc(pay || "Salary not disclosed")} · ${esc(visa)}${j.opt?.mentioned ? " · OPT / CPT mentioned" : ""}</p>
+      ${evidence.length ? `<details><summary>Posting evidence</summary>${evidence.map(s => `<p>${esc(s)}</p>`).join("")}<small>Mentions do not establish work authorization eligibility. Verify the linked posting.</small></details>` : ""}
     </div>
     <div class="job-side"><span class="age" data-t="${esc(j.first_seen)}">Found ${ago(j.first_seen)}</span>
       <a class="apply-link" href="${href}" target="_blank" rel="noopener noreferrer" aria-label="${esc(`View ${j.title} at ${company}, opens a new tab`)}">View role <span aria-hidden="true">↗</span></a></div>`;
@@ -85,9 +92,22 @@ function resultCount() {
 }
 
 async function getJson(url) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Request failed: ${response.status}`);
-  return response.json();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetch(url, {signal: AbortSignal.timeout(15000)});
+      if (!response.ok) {
+        if ([502, 503, 504].includes(response.status) && attempt < 2) {
+          await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+          continue;
+        }
+        throw new Error(`Request failed: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      if (attempt === 2 || !(error instanceof TypeError || error.name === "TimeoutError")) throw error;
+      await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+    }
+  }
 }
 
 async function load(reset) {
@@ -187,6 +207,9 @@ function matches(j) {
     return false;
   if (p.get("state") && !j.states.includes(p.get("state"))) return false;
   if (p.get("remote") && !j.remote) return false;
+  if (p.get("sponsorship") && j.sponsorship?.status !== p.get("sponsorship")) return false;
+  if (p.get("salary_disclosed") && !j.salary?.ranges?.length) return false;
+  if (p.get("opt_mentioned") && !j.opt?.mentioned) return false;
   if (p.get("level")) return false; // level regex lives server side; the next reload picks these up
   return true;
 }

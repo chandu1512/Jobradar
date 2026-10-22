@@ -18,21 +18,30 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 @app.middleware("http")
 async def mark_origin(request: Request, call_next):
+    head = request.method == "HEAD"
+    if head and request.url.path != "/jobs/stream":
+        request.scope["method"] = "GET"
     response = await call_next(request)
+    if head:
+        async def empty():
+            if False:
+                yield b""
+        response.body_iterator = empty()
     response.headers["X-JobRadar-Origin"] = "api"
     return response
 
 
 LEVELS = {
     "newgrad": r"(new\s*grad|entry[\s-]*level|early[\s-]*career|graduate|university|campus|junior"
-               r"|associate\s+(software|engineer|data)|\m(i|1)\M\s*$|engineer\s+(i|1)\M)",
+               r"|\massociate\M|\m(i|1)\M\s*$|engineer\s+(i|1)\M)",
     "intern": r"\m(intern|internship|co-?op)\M",
 }
 SENIOR = r"\m(senior|sr\.?|staff|principal|lead|manager|director|head|vp|architect)\M"
 
 JOB_COLS = """
 j.id, c.name AS company, c.ats, j.title, j.location, j.states, j.remote, j.is_us,
-j.url, j.posted_at, j.first_seen, j.discovered_live
+j.url, j.posted_at, j.first_seen, j.discovered_live, j.signals,
+j.signals->'salary' AS salary, j.signals->'sponsorship' AS sponsorship, j.signals->'opt' AS opt
 """
 
 
@@ -69,8 +78,18 @@ def _filters(q, location, state, us, remote, level, hours, category="", company=
 @app.get("/jobs")
 def list_jobs(q: str = "", location: str = "", state: str = "", us: bool = True, remote: bool = False,
               level: str = "", hours: int = Query(24, le=24 * 90), limit: int = Query(50, le=200),
-              before_id: int | None = None, category: str = "", company: str = ""):
+              before_id: int | None = None, category: str = "", company: str = "",
+              sponsorship: str = "", opt_mentioned: bool = False, salary_disclosed: bool = False):
     where, args = _filters(q, location, state, us, remote, level, hours, category, company)
+    if sponsorship:
+        if sponsorship not in {"offered", "not_offered", "unknown", "conflicting"}:
+            raise HTTPException(status_code=422, detail="Unknown sponsorship status")
+        where += " AND coalesce(j.signals->'sponsorship'->>'status', 'unknown') = %(sponsorship)s"
+        args["sponsorship"] = sponsorship
+    if opt_mentioned:
+        where += " AND j.signals->'opt'->>'mentioned' = 'true'"
+    if salary_disclosed:
+        where += " AND jsonb_array_length(coalesce(j.signals->'salary'->'ranges', '[]'::jsonb)) > 0"
     if before_id:
         where += " AND j.id < %(before_id)s"
         args["before_id"] = before_id
@@ -160,11 +179,22 @@ def stats():
       (SELECT count(*) FROM jobs WHERE discovered_live
          AND first_seen > now() - interval '24 hours') AS new_last_24h,
       (SELECT percentile_cont(0.5) WITHIN GROUP
+         (ORDER BY extract(epoch FROM first_seen - previous_successful_crawl_at) / 60)
+       FROM jobs WHERE discovered_live AND previous_successful_crawl_at IS NOT NULL
+         AND first_seen > now() - interval '24 hours') AS median_observation_gap_minutes,
+      (SELECT count(*) FROM jobs WHERE discovered_live AND previous_successful_crawl_at IS NOT NULL
+         AND first_seen > now() - interval '24 hours') AS observation_gap_samples,
+      (SELECT percentile_cont(0.5) WITHIN GROUP
          (ORDER BY extract(epoch FROM first_seen - posted_at) / 60)
        FROM jobs WHERE discovered_live AND posted_at IS NOT NULL) AS median_detect_minutes
     """
     with connect() as conn:
-        return conn.execute(sql).fetchone()
+        result = conn.execute(sql).fetchone()
+        result["median_posting_age_at_detection_minutes"] = result["median_detect_minutes"]
+        result["detection_metric_note"] = (
+            "Posting age includes upstream publication delays; observation gap is an upper bound "
+            "since the preceding successful full feed crawl. Historical jobs have no observation bound.")
+        return result
 
 
 @app.get("/")

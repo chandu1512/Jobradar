@@ -10,18 +10,19 @@ from app import config
 from app.db import connect
 from app.fetchers import FETCHERS
 from app.location import from_raw
+from app.signals import enrich
 
 CONSUMER = os.getenv("HOSTNAME", socket.gethostname())
 
 UPSERT = """
 INSERT INTO jobs (company_id, ext_id, title, location, url, posted_at, discovered_live, raw,
-                  is_us, states, remote)
+                  is_us, states, remote, signals, previous_successful_crawl_at)
 VALUES (%(company_id)s, %(ext_id)s, %(title)s, %(location)s, %(url)s, %(posted_at)s, %(live)s, %(raw)s,
-        %(is_us)s, %(states)s, %(remote)s)
+        %(is_us)s, %(states)s, %(remote)s, %(signals)s, %(previous)s)
 ON CONFLICT (company_id, ext_id) DO UPDATE
 SET title = EXCLUDED.title, location = EXCLUDED.location, url = EXCLUDED.url,
     is_us = EXCLUDED.is_us, states = EXCLUDED.states, remote = EXCLUDED.remote,
-    raw = EXCLUDED.raw,
+    raw = EXCLUDED.raw, signals = EXCLUDED.signals,
     last_seen = now(), is_active = TRUE
 RETURNING id, (xmax = 0) AS inserted
 """
@@ -34,18 +35,23 @@ def process(r, client, task):
         jobs = FETCHERS[task["ats"]](client, task["slug"])
         found = len(jobs)
         with connect() as conn:
-            first = conn.execute(
-                "SELECT last_crawled_at IS NULL AS first FROM companies WHERE id=%s", (cid,)
-            ).fetchone()["first"]
+            previous = conn.execute(
+                "SELECT last_successful_crawl_at FROM companies WHERE id=%s", (cid,)
+            ).fetchone()["last_successful_crawl_at"]
+            first = previous is None
             for j in jobs:
                 loc = from_raw(task["ats"], j["location"], j["raw"])
                 row = conn.execute(UPSERT, {**j, **loc, "company_id": cid,
-                                            "live": not first, "raw": Jsonb(j["raw"])}).fetchone()
+                                            "live": not first, "raw": Jsonb(j["raw"]),
+                                            "signals": Jsonb(enrich(j["raw"], j["url"])),
+                                            "previous": previous if getattr(jobs, "complete", True) else None}
+                                   ).fetchone()
                 if row["inserted"] and not first:
                     new_ids.append(row["id"])
             if getattr(jobs, "complete", True):
                 conn.execute("UPDATE jobs SET is_active = FALSE "
                              "WHERE company_id=%s AND is_active AND last_seen < now()", (cid,))
+            conn.execute("UPDATE companies SET last_successful_crawl_at=now() WHERE id=%s", (cid,))
         for jid in new_ids:
             r.xadd(config.NEW_JOBS_STREAM, {"job_id": jid, "company_id": cid},
                    maxlen=100000, approximate=True)

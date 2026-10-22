@@ -73,7 +73,8 @@ class WorkerSnapshotTests(unittest.TestCase):
         from app.worker import process
 
         conn = MagicMock()
-        conn.execute.return_value.fetchone.side_effect = [{'first': True}, {'id': 1, 'inserted': True}]
+        conn.execute.return_value.fetchone.side_effect = [
+            {'last_successful_crawl_at': None}, {'id': 1, 'inserted': True}]
         context = MagicMock()
         context.__enter__.return_value = conn
         rows = PartialJobs([{'ext_id': '1', 'title': 'Engineer', 'location': 'US, NJ, Newark',
@@ -85,6 +86,7 @@ class WorkerSnapshotTests(unittest.TestCase):
                 process(redis, None, {'company_id': '1', 'ats': 'amazon', 'slug': 'amazon'})
         sql = [call.args[0] for call in conn.execute.call_args_list]
         self.assertFalse(any('SET is_active = FALSE' in statement for statement in sql))
+        self.assertTrue(any('INSERT INTO jobs' in statement for statement in sql))
         redis.xadd.assert_not_called()
         redis.delete.assert_called_once_with('inflight:1')
 
@@ -94,7 +96,7 @@ class WorkerSnapshotTests(unittest.TestCase):
         from app.worker import process
 
         conn = MagicMock()
-        conn.execute.return_value.fetchone.return_value = {'first': False}
+        conn.execute.return_value.fetchone.return_value = {'last_successful_crawl_at': '2026-10-22T12:00:00Z'}
         context = MagicMock()
         context.__enter__.return_value = conn
         with patch('app.worker.connect', return_value=context):

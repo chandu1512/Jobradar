@@ -1,0 +1,27 @@
+import unittest
+
+from app.signals import enrich
+
+
+class SignalsTests(unittest.TestCase):
+    def test_unknown_is_not_denial(self):
+        result = enrich({'descriptionPlain': 'Great engineering role'}, 'https://example.com')
+        self.assertEqual(result['sponsorship']['status'], 'unknown')
+        self.assertFalse(result['opt']['mentioned'])
+
+    def test_negative_and_opt(self):
+        result = enrich({'content': 'We cannot offer visa sponsorship. OPT candidates welcome.'}, 'url')
+        self.assertEqual(result['sponsorship']['status'], 'not_offered')
+        self.assertTrue(result['opt']['mentioned'])
+        self.assertEqual(result['opt']['status'], 'unknown')
+
+    def test_structured_salary(self):
+        result = enrich({'compensation': {'summaryComponents': [
+            {'compensationType': 'Salary', 'minValue': 100000, 'maxValue': 130000,
+             'currencyCode': 'USD', 'interval': '1 YEAR'}]}}, 'url')
+        self.assertEqual(result['salary']['ranges'][0]['min'], 100000)
+
+    def test_text_salary_preserves_unknown_units(self):
+        result = enrich({'content': 'Pay $100,000 - $130,000.'}, 'url')
+        self.assertIsNone(result['salary']['ranges'][0]['interval'])
+        self.assertIsNone(result['salary']['ranges'][0]['currency'])
