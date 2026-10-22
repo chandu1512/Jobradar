@@ -21,6 +21,7 @@ VALUES (%(company_id)s, %(ext_id)s, %(title)s, %(location)s, %(url)s, %(posted_a
 ON CONFLICT (company_id, ext_id) DO UPDATE
 SET title = EXCLUDED.title, location = EXCLUDED.location, url = EXCLUDED.url,
     is_us = EXCLUDED.is_us, states = EXCLUDED.states, remote = EXCLUDED.remote,
+    raw = EXCLUDED.raw,
     last_seen = now(), is_active = TRUE
 RETURNING id, (xmax = 0) AS inserted
 """
@@ -42,8 +43,9 @@ def process(r, client, task):
                                             "live": not first, "raw": Jsonb(j["raw"])}).fetchone()
                 if row["inserted"] and not first:
                     new_ids.append(row["id"])
-            conn.execute("UPDATE jobs SET is_active = FALSE "
-                         "WHERE company_id=%s AND is_active AND last_seen < now()", (cid,))
+            if getattr(jobs, "complete", True):
+                conn.execute("UPDATE jobs SET is_active = FALSE "
+                             "WHERE company_id=%s AND is_active AND last_seen < now()", (cid,))
         for jid in new_ids:
             r.xadd(config.NEW_JOBS_STREAM, {"job_id": jid, "company_id": cid},
                    maxlen=100000, approximate=True)

@@ -52,7 +52,30 @@ async def _ashby(client, slug):
     return r.status_code, None, (_job_count(r.json(), "jobs") if r.status_code == 200 else 0)
 
 
-PROBES = {"greenhouse": _greenhouse, "lever": _lever, "ashby": _ashby}
+async def _smartrecruiters(client, slug):
+    r = await client.get(f"https://api.smartrecruiters.com/v1/companies/{slug}/postings", params={"limit": 1})
+    if r.status_code != 200:
+        return r.status_code, None, 0
+    payload = r.json()
+    jobs = _job_count(payload, "content")
+    name = payload["content"][0]["company"]["name"] if jobs else None
+    return 200, name, jobs
+
+
+async def _amazon(client, slug):
+    if slug != "amazon":
+        return 404, None, 0
+    r = await client.get("https://www.amazon.jobs/en/search.json", params={"country": "USA", "result_limit": 1})
+    if r.status_code != 200:
+        return r.status_code, None, 0
+    payload = r.json()
+    if payload.get("error"):
+        raise ValueError("Amazon search error")
+    return 200, "Amazon", _job_count(payload, "jobs")
+
+
+PROBES = {"greenhouse": _greenhouse, "lever": _lever, "ashby": _ashby,
+          "smartrecruiters": _smartrecruiters, "amazon": _amazon}
 
 
 def classify(c, code, board_name, jobs):

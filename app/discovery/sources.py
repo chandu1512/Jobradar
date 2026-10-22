@@ -7,12 +7,14 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 
-ATSES = ("greenhouse", "lever", "ashby")
+ATSES = ("greenhouse", "lever", "ashby", "smartrecruiters")
 CC_HOSTS = {
     "boards.greenhouse.io": "greenhouse",
     "job-boards.greenhouse.io": "greenhouse",
     "jobs.lever.co": "lever",
     "jobs.ashbyhq.com": "ashby",
+    "jobs.smartrecruiters.com": "smartrecruiters",
+    "careers.smartrecruiters.com": "smartrecruiters",
 }
 SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 NOT_SLUGS = {"embed", "api", "v1", "jobs", "favicon.ico", "robots.txt", "sitemap.xml"}
@@ -27,11 +29,13 @@ def norm_slug(ats, slug):
     if not SLUG_RE.match(slug) or slug.lower() in NOT_SLUGS:
         return None
     # Lever slugs are case sensitive; Greenhouse and Ashby are not.
-    return slug if ats == "lever" else slug.lower()
+    return slug.lower() if ats in ("greenhouse", "ashby") else slug
 
 
 def slug_from_url(url):
     u = urlparse(url if "://" in url else "https://" + url)
+    if (u.hostname or "").lower() in ("amazon.jobs", "www.amazon.jobs"):
+        return "amazon", "amazon"
     ats = CC_HOSTS.get((u.hostname or "").lower())
     if not ats:
         return None, None

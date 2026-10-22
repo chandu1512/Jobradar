@@ -120,7 +120,14 @@ def from_raw(ats, location, raw):
     """Pull a country hint out of the ATS payload, then parse."""
     raw = raw or {}
     country = None
-    if ats == "lever":
+    if ats == "amazon":
+        country = "US" if raw.get("country_code") == "USA" else raw.get("country_code")
+    elif ats == "smartrecruiters":
+        loc = raw.get("location") or {}
+        country = loc.get("country")
+        if loc.get("remote"):
+            location = f"{location or ''} (Remote)"
+    elif ats == "lever":
         country = raw.get("country")
         if (raw.get("workplaceType") or "") == "remote" and location and "remote" not in location.lower():
             location = f"{location} (Remote)"

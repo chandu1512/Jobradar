@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+from app.career_fetchers import amazon, smartrecruiters
+
 
 def _ms(ms):
     return datetime.fromtimestamp(ms / 1000, tz=UTC) if ms else None
@@ -40,4 +42,5 @@ def ashby(client, slug):
         "raw": j,
     } for j in r.json().get("jobs", [])]
 
-FETCHERS = {"greenhouse": greenhouse, "lever": lever, "ashby": ashby}
+FETCHERS = {"greenhouse": greenhouse, "lever": lever, "ashby": ashby,
+            "amazon": amazon, "smartrecruiters": smartrecruiters}

@@ -11,7 +11,7 @@ import httpx
 
 from app.db import connect
 from app.discovery import probe
-from app.discovery.sources import SOURCES
+from app.discovery.sources import SOURCES, slug_from_url
 
 INSERT_SQL = """
 INSERT INTO company_candidates (ats, slug, name, source, guessed)
@@ -63,10 +63,28 @@ def main():
     pr.add_argument("--source", default="", help="only candidates whose source starts with this")
     pr.add_argument("--limit", type=positive_int)
     pr.add_argument("--concurrency", type=positive_int, default=8, help="parallel requests per ATS")
+    add = sub.add_parser("add", help="validate a public careers board URL before adding it")
+    add.add_argument("url")
+    add.add_argument("--name", required=True)
     sub.add_parser("stats")
     a = p.parse_args()
 
-    if a.cmd == "collect":
+    if a.cmd == "add":
+        ats, slug = slug_from_url(a.url)
+        if not ats:
+            p.error("Unsupported careers URL. A source adapter is needed for this site.")
+        candidate = {"id": 0, "ats": ats, "slug": slug, "name": a.name,
+                     "source": "manual", "guessed": False}
+        async def validate():
+            async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+                return await probe._check(client, {ats: asyncio.Semaphore(1)}, candidate)
+        result = asyncio.run(validate())
+        if result["status"] != "valid":
+            p.error(f"Board was not promoted: {result['status']}")
+        with connect() as conn:
+            conn.execute(probe.PROMOTE_SQL, result)
+        print(f"validated and added {ats}/{slug}")
+    elif a.cmd == "collect":
         kw = {"crawls": a.crawls, "max_pages": a.max_pages} if a.source == "commoncrawl" else {}
         collect(a.source, **kw)
     elif a.cmd == "probe":
