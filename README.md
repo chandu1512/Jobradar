@@ -282,7 +282,7 @@ The responsive interface lives in `app/static/index.html`, `styles.css`, and `ap
 FastAPI serves assets under `/static`. Desktop uses a scrollable sticky filter sidebar;
 phones use a collapsed filter panel and stacked job cards. Controls keep their labels,
 keyboard focus indicators, and at least 16px input text on phones to avoid automatic zoom.
-The page supports light and dark system themes and reduced motion preferences.
+The page keeps a white background regardless of system theme and respects reduced motion preferences.
 Search has request ordering protection, loading and error states, reset controls, and
 company coverage messages. Role category shortcuts reuse the existing API filters.
 No frontend build process or external fonts are required.

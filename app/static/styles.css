@@ -1,6 +1,6 @@
 :root {
   color-scheme: light;
-  --bg: #f7f5f0;
+  --bg: #ffffff;
   --surface: #fff;
   --text: #182c3d;
   --muted: #6b746f;
@@ -1008,55 +1008,6 @@ select {
   }
   .job-title {
     font-size: 14px;
-  }
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --bg: #111c24;
-    --surface: #1a2933;
-    --text: #f4f1e9;
-    --muted: #adb7bb;
-    --line: #30414a;
-    --accent: #f1ac7e;
-    --accent-hover: #ffc39b;
-    --soft: #3c3029;
-    --green: #70cdb0;
-    --green-soft: #20392f;
-    --shadow: none;
-  }
-  .brand-mark,
-  .chip.active {
-    background: #a84927;
-    color: white;
-  }
-  .brand-period {
-    color: var(--accent);
-  }
-  .job-card:hover {
-    border-color: #9b7258;
-  }
-  .company-avatar.tone-1 {
-    background: #253745;
-    color: #8bb9d9;
-  }
-  .company-avatar.tone-2 {
-    background: #403327;
-    color: #d9b38b;
-  }
-  .company-avatar.tone-3 {
-    background: #263c31;
-    color: #98c9ac;
-  }
-  .error-notice {
-    background: #442b28;
-    color: #f7b9a8;
-  }
-  .toggle {
-    background: #49565c;
-  }
-  .remote-option input:checked + .toggle {
-    background: #a84927;
   }
 }
 @media (prefers-reduced-motion: reduce) {
