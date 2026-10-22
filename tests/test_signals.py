@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 from app.signals import enrich
 
@@ -50,3 +51,21 @@ class SignalsTests(unittest.TestCase):
         result = enrich({'content': 'Optional practical training candidates may apply.'}, 'url')
         self.assertTrue(result['opt']['mentioned'])
         self.assertEqual(result['opt']['status'], 'unknown')
+
+    def test_recidiviz_entry_level_actual_compensation_markup(self):
+        content = (Path(__file__).parent / 'fixtures' / 'recidiviz_compensation.html').read_text()
+        result = enrich({'content': content}, 'https://job-boards.greenhouse.io/recidiviz/jobs/4717510006')
+        self.assertEqual(len(result['salary']['ranges']), 1)
+        salary = result['salary']['ranges'][0]
+        self.assertEqual((salary['min'], salary['max'], salary['kind']), (85000, 85000, 'fixed'))
+        self.assertIsNone(salary['interval'])
+        self.assertEqual(result['sponsorship']['status'], 'not_offered')
+
+    def test_compensation_bonus_is_not_base_salary(self):
+        result = enrich({'content': 'Compensation: signing bonus $85,000.'}, 'url')
+        self.assertEqual(result['salary']['ranges'], [])
+
+    def test_repeated_fixed_compensation_is_deduplicated(self):
+        result = enrich({'content': 'Compensation: $85,000. Compensation: $85,000.'}, 'url')
+        self.assertEqual(len(result['salary']['ranges']), 1)
+        self.assertEqual(result['salary']['ranges'][0]['min'], 85000)

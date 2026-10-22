@@ -60,7 +60,7 @@ def enrich(raw, url):
         prefix = text[max(0, match.start()-65):match.start()]
         suffix = text[match.end():match.end()+60]
         # Require salary context; do not turn signing bonuses or benefits into base pay.
-        if not re.search(r'salary|base pay|base compensation|hourly (?:rate|pay)|annual pay', prefix, re.I):
+        if not re.search(r'salary|base pay|compensation|hourly (?:rate|pay)|annual pay', prefix, re.I):
             continue
         if re.search(r'bonus|equity|stipend|allowance|reimbursement', prefix, re.I):
             continue
@@ -71,7 +71,13 @@ def enrich(raw, url):
                          'currency': 'USD' if 'USD' in context else None,
                          'interval': unit[1].lower() if unit else None, 'source': 'posting_text'})
         salary_evidence.append(context)
-    return {'requirements': screen(text), 'salary': {'ranges': salaries, 'evidence': salary_evidence[:8]},
+    unique_salaries, seen_salaries = [], set()
+    for salary in salaries:
+        key = tuple(salary.get(field) for field in ('min', 'max', 'currency', 'interval', 'kind', 'source'))
+        if key not in seen_salaries:
+            seen_salaries.add(key)
+            unique_salaries.append(salary)
+    return {'requirements': screen(text), 'salary': {'ranges': unique_salaries, 'evidence': salary_evidence[:8]},
             'sponsorship': {'status': status, 'evidence': evidence[:8]},
             'opt': {'mentioned': bool(re.search(training, text, re.I)),
                     'status': 'unknown'}, 'source_url': url,
