@@ -9,4 +9,4 @@ services:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?Set NGROK_AUTHTOKEN in your local .env file}
     command: [http, 'http://api:8000', '--url=${NGROK_URL:-https://vicinity-busybody-upper.ngrok-free.dev}', --log, stdout, --log-format, json]
     depends_on:
-      - api
+      api: { condition: service_healthy }

@@ -54,7 +54,7 @@ function row(j, fresh) {
     .find(Boolean);
   const href = esc(safeUrl(j.url));
   const ranges = j.salary?.ranges || [];
-  const pay = ranges.map(r => `${r.currency || "$ (currency unspecified)"} ${Number(r.min).toLocaleString()}–${Number(r.max).toLocaleString()}${r.interval ? ` / ${r.interval}` : " (period unspecified)"}`).join("; ");
+  const pay = ranges.map(r => `${r.currency || "$ (currency unspecified)"} ${Number(r.min).toLocaleString()}${r.min === r.max ? "" : `–${Number(r.max).toLocaleString()}`}${r.interval ? ` / ${r.interval}` : " (period unspecified)"}`).join("; ");
   const visa = {offered: "Sponsorship offered", not_offered: "Sponsorship not offered", conflicting: "Conflicting sponsorship statements", unknown: "Sponsorship unknown"}[j.sponsorship?.status || "unknown"];
   const findings = j.requirements?.findings || [];
   const requirementLabels = {experience: "Experience requirement", doctoral_degree: "PhD mentioned", work_authorization: "Authorization restriction mentioned", enrollment: "Enrollment mentioned", graduation_window: "Graduation window"};
@@ -70,7 +70,7 @@ function row(j, fresh) {
         ${j.remote ? '<span class="tag remote">Remote</span>' : ""}
         ${[...new Set(findings.map(f => f.type))].map(t => `<span class="tag">${esc(requirementLabels[t])}</span>`).join("")}
         ${j.discovered_live ? '<span class="tag new">New discovery</span>' : '<span class="tag">Company careers</span>'}</div>
-      <p class="job-location">${esc(pay || "Salary not disclosed")} · ${esc(visa)}${j.opt?.mentioned ? " · OPT / CPT mentioned" : ""}</p>
+      <p class="job-location">${esc(pay || (j.signals?.description_available ? "Salary not found in available text" : "Description unavailable — salary unknown"))} · ${esc(visa)}${j.opt?.mentioned ? " · OPT / CPT mentioned" : ""}</p>
       ${evidence.length ? `<details><summary>Posting evidence</summary>${evidence.map(s => `<p>${esc(s)}</p>`).join("")}<small>Mentions do not establish work authorization eligibility. Verify the linked posting.</small></details>` : ""}
     </div>
     <div class="job-side"><span class="age" data-t="${esc(j.first_seen)}">Found ${ago(j.first_seen)}</span>
@@ -211,7 +211,9 @@ function matches(j) {
     return false;
   if (p.get("state") && !j.states.includes(p.get("state"))) return false;
   if (p.get("remote") && !j.remote) return false;
-  if (p.get("sponsorship") && j.sponsorship?.status !== p.get("sponsorship")) return false;
+  if (p.get("sponsorship") === "exclude_denied") {
+    if (j.sponsorship?.status === "not_offered") return false;
+  } else if (p.get("sponsorship") && j.sponsorship?.status !== p.get("sponsorship")) return false;
   if (p.get("salary_disclosed") && !j.salary?.ranges?.length) return false;
   if (p.get("opt_mentioned") && !j.opt?.mentioned) return false;
   if (p.get("requirement") && !j.requirements?.findings?.some(f => f.type === p.get("requirement"))) return false;

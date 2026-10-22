@@ -25,3 +25,28 @@ class SignalsTests(unittest.TestCase):
         result = enrich({'content': 'Pay $100,000 - $130,000.'}, 'url')
         self.assertIsNone(result['salary']['ranges'][0]['interval'])
         self.assertIsNone(result['salary']['ranges'][0]['currency'])
+
+    def test_fixed_salary(self):
+        result = enrich({'content': 'The annual salary is $85,000 per year.'}, 'url')
+        salary = result['salary']['ranges'][0]
+        self.assertEqual((salary['min'], salary['max'], salary['kind']), (85000, 85000, 'fixed'))
+        self.assertEqual(salary['interval'], 'year')
+
+    def test_bonus_not_base_salary(self):
+        result = enrich({'content': 'Salary includes a signing bonus of $10,000.'}, 'url')
+        self.assertEqual(result['salary']['ranges'], [])
+
+    def test_range_not_duplicated_as_fixed(self):
+        result = enrich({'content': 'Annual salary $85,000 - $100,000 per year.'}, 'url')
+        self.assertEqual(len(result['salary']['ranges']), 1)
+
+    def test_nested_description(self):
+        result = enrich({'_detail': {'jobAd': {'sections': {
+            'qualifications': {'text': 'We cannot provide visa sponsorship.'}}}}}, 'url')
+        self.assertTrue(result['description_available'])
+        self.assertEqual(result['sponsorship']['status'], 'not_offered')
+
+    def test_spelled_out_practical_training(self):
+        result = enrich({'content': 'Optional practical training candidates may apply.'}, 'url')
+        self.assertTrue(result['opt']['mentioned'])
+        self.assertEqual(result['opt']['status'], 'unknown')

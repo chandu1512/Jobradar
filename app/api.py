@@ -91,10 +91,13 @@ def list_jobs(q: str = "", location: str = "", state: str = "", us: bool = True,
         where += " AND j.signals->'requirements'->'findings' @> %(requirement)s::jsonb"
         args["requirement"] = json.dumps([{"type": requirement}])
     if sponsorship:
-        if sponsorship not in {"offered", "not_offered", "unknown", "conflicting"}:
+        if sponsorship not in {"offered", "not_offered", "unknown", "conflicting", "exclude_denied"}:
             raise HTTPException(status_code=422, detail="Unknown sponsorship status")
-        where += " AND coalesce(j.signals->'sponsorship'->>'status', 'unknown') = %(sponsorship)s"
-        args["sponsorship"] = sponsorship
+        if sponsorship == "exclude_denied":
+            where += " AND coalesce(j.signals->'sponsorship'->>'status', 'unknown') <> 'not_offered'"
+        else:
+            where += " AND coalesce(j.signals->'sponsorship'->>'status', 'unknown') = %(sponsorship)s"
+            args["sponsorship"] = sponsorship
     if opt_mentioned:
         where += " AND j.signals->'opt'->>'mentioned' = 'true'"
     if salary_disclosed:
@@ -176,6 +179,13 @@ def states(hours: int = Query(24 * 7, le=24 * 90)):
     """
     with connect() as conn:
         return conn.execute(sql, (hours,)).fetchall()
+
+
+@app.get("/health")
+def health():
+    with connect() as conn:
+        conn.execute("SELECT 1")
+    return {"status": "ok"}
 
 
 @app.get("/stats")

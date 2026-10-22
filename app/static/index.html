@@ -10,7 +10,7 @@
     />
     <title>JobRadar · Find your next opportunity</title>
     <link rel="stylesheet" href="/static/styles.css?v=4" />
-    <script src="/static/app.js?v=4" defer></script>
+    <script src="/static/app.js?v=5" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#results">Skip to jobs</a>
@@ -142,10 +142,11 @@
                 ></label>
                 <div class="field"><label for="sponsorship">Visa sponsorship evidence</label>
                   <select id="sponsorship" name="sponsorship"><option value="">All postings</option>
+                    <option value="exclude_denied">Exclude explicit denials (keeps unknown)</option>
                     <option value="offered">Explicitly offered</option><option value="not_offered">Not offered</option>
                     <option value="unknown">Unknown</option><option value="conflicting">Conflicting statements</option>
                   </select></div>
-                <label><input type="checkbox" name="salary_disclosed" /> Salary range disclosed</label>
+                <label><input type="checkbox" name="salary_disclosed" /> Salary disclosed (fixed or range)</label>
                 <label><input type="checkbox" name="opt_mentioned" /> OPT / CPT mentioned (check eligibility)</label>
                 <div class="field"><label for="requirement">Review description requirements</label>
                   <select id="requirement" name="requirement"><option value="">All postings</option>

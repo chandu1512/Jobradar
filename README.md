@@ -316,3 +316,14 @@ filters for those mentions. The UI exposes the same review filters and evidence.
 Preferences and alternatives are marked where detected; these rule-based flags are not
 personal eligibility decisions. Missing findings or missing descriptions mean unknown,
 not qualified. Title-based `level=newgrad` remains a discovery filter, not JD screening.
+
+`/jobs?sponsorship=exclude_denied` excludes explicit denials while keeping unknowns and
+conflicting evidence available for review. `salary_disclosed=true` also includes fixed
+salary amounts (`kind=fixed`, min equals max); missing currency/period stays unknown.
+OPT/CPT flags only identify mentions, not employer acceptance or authorization eligibility.
+
+The `descriptions` service fetches up to 20 missing US SmartRecruiters descriptions per
+minute with a half-second pause between requests, independently of the discovery workers.
+It updates posting evidence without changing first_seen or publishing new-job events.
+The API has `/health`; the public tunnel waits for healthy startup. A pinned ngrok address
+and readiness checks do not provide uptime while the host Mac is offline.

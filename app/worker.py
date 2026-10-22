@@ -22,7 +22,9 @@ VALUES (%(company_id)s, %(ext_id)s, %(title)s, %(location)s, %(url)s, %(posted_a
 ON CONFLICT (company_id, ext_id) DO UPDATE
 SET title = EXCLUDED.title, location = EXCLUDED.location, url = EXCLUDED.url,
     is_us = EXCLUDED.is_us, states = EXCLUDED.states, remote = EXCLUDED.remote,
-    raw = EXCLUDED.raw, signals = EXCLUDED.signals,
+    signals = CASE WHEN jobs.raw ? '_detail' AND NOT (EXCLUDED.raw ? '_detail')
+                   THEN jobs.signals ELSE EXCLUDED.signals END,
+    raw = jsonb_strip_nulls(jsonb_build_object('_detail', jobs.raw->'_detail')) || EXCLUDED.raw,
     last_seen = now(), is_active = TRUE
 RETURNING id, (xmax = 0) AS inserted
 """
@@ -38,8 +40,15 @@ def process(r, client, task):
             previous = conn.execute(
                 "SELECT last_successful_crawl_at FROM companies WHERE id=%s", (cid,)
             ).fetchone()["last_successful_crawl_at"]
+            cached = {}
+            if task['ats'] == 'smartrecruiters':
+                cached = {row['ext_id']: row['detail'] for row in conn.execute(
+                    "SELECT ext_id, raw->'_detail' AS detail FROM jobs "
+                    "WHERE company_id=%s AND raw ? '_detail'", (cid,)).fetchall()}
             first = previous is None
             for j in jobs:
+                if j['ext_id'] in cached:
+                    j['raw']['_detail'] = cached[j['ext_id']]
                 loc = from_raw(task["ats"], j["location"], j["raw"])
                 row = conn.execute(UPSERT, {**j, **loc, "company_id": cid,
                                             "live": not first, "raw": Jsonb(j["raw"]),
