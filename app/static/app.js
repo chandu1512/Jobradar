@@ -21,7 +21,7 @@ const esc = (s) =>
 function params() {
   const fd = new FormData(form),
     p = new URLSearchParams();
-  for (const k of ["q", "company", "category", "level", "state", "hours", "sponsorship"])
+  for (const k of ["q", "company", "category", "level", "state", "hours", "sponsorship", "requirement"])
     if (fd.get(k)) p.set(k, fd.get(k));
   for (const key of ["remote", "salary_disclosed", "opt_mentioned"])
     if (fd.get(key)) p.set(key, "true");
@@ -56,7 +56,10 @@ function row(j, fresh) {
   const ranges = j.salary?.ranges || [];
   const pay = ranges.map(r => `${r.currency || "$ (currency unspecified)"} ${Number(r.min).toLocaleString()}–${Number(r.max).toLocaleString()}${r.interval ? ` / ${r.interval}` : " (period unspecified)"}`).join("; ");
   const visa = {offered: "Sponsorship offered", not_offered: "Sponsorship not offered", conflicting: "Conflicting sponsorship statements", unknown: "Sponsorship unknown"}[j.sponsorship?.status || "unknown"];
-  const evidence = [...(j.sponsorship?.evidence || []), ...(j.salary?.evidence || [])];
+  const findings = j.requirements?.findings || [];
+  const requirementLabels = {experience: "Experience requirement", doctoral_degree: "PhD mentioned", work_authorization: "Authorization restriction mentioned", enrollment: "Enrollment mentioned", graduation_window: "Graduation window"};
+  const evidence = [...(j.sponsorship?.evidence || []), ...(j.salary?.evidence || []),
+    ...findings.map(f => `${requirementLabels[f.type]} (${f.qualification}): ${f.evidence}`)];
   li.innerHTML = `
     <div class="company-avatar tone-${tone}" aria-hidden="true">${esc(initials)}</div>
     <div class="job-info">
@@ -65,6 +68,7 @@ function row(j, fresh) {
       <p class="job-location" title="${esc(j.location || "Location not specified")}"><span aria-hidden="true">⌖</span>${esc(j.location || "Location not specified")}</p>
       <div class="job-tags">${category ? `<span class="tag">${esc(category)}</span>` : ""}
         ${j.remote ? '<span class="tag remote">Remote</span>' : ""}
+        ${[...new Set(findings.map(f => f.type))].map(t => `<span class="tag">${esc(requirementLabels[t])}</span>`).join("")}
         ${j.discovered_live ? '<span class="tag new">New discovery</span>' : '<span class="tag">Company careers</span>'}</div>
       <p class="job-location">${esc(pay || "Salary not disclosed")} · ${esc(visa)}${j.opt?.mentioned ? " · OPT / CPT mentioned" : ""}</p>
       ${evidence.length ? `<details><summary>Posting evidence</summary>${evidence.map(s => `<p>${esc(s)}</p>`).join("")}<small>Mentions do not establish work authorization eligibility. Verify the linked posting.</small></details>` : ""}
@@ -210,6 +214,7 @@ function matches(j) {
   if (p.get("sponsorship") && j.sponsorship?.status !== p.get("sponsorship")) return false;
   if (p.get("salary_disclosed") && !j.salary?.ranges?.length) return false;
   if (p.get("opt_mentioned") && !j.opt?.mentioned) return false;
+  if (p.get("requirement") && !j.requirements?.findings?.some(f => f.type === p.get("requirement"))) return false;
   if (p.get("level")) return false; // level regex lives server side; the next reload picks these up
   return true;
 }

@@ -308,3 +308,11 @@ The ngrok overlay pins the existing account domain; override `NGROK_URL` for ano
 account. Free ngrok still requires the Mac and Docker to run and presents a browser
 notice; automated callers use request header `ngrok-skip-browser-warning: 1`.
 This is public tunneling, not independent permanent hosting.
+
+Description screening: `/jobs` includes `requirements.findings` with verbatim evidence
+for experience, doctoral degree mentions, work authorization restrictions, enrollment,
+and graduation windows. `requirement=experience|doctoral_degree|work_authorization|enrollment|graduation_window`
+filters for those mentions. The UI exposes the same review filters and evidence.
+Preferences and alternatives are marked where detected; these rule-based flags are not
+personal eligibility decisions. Missing findings or missing descriptions mean unknown,
+not qualified. Title-based `level=newgrad` remains a discovery filter, not JD screening.

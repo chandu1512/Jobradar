@@ -10,7 +10,7 @@
     />
     <title>JobRadar · Find your next opportunity</title>
     <link rel="stylesheet" href="/static/styles.css?v=4" />
-    <script src="/static/app.js?v=3" defer></script>
+    <script src="/static/app.js?v=4" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#results">Skip to jobs</a>
@@ -147,6 +147,11 @@
                   </select></div>
                 <label><input type="checkbox" name="salary_disclosed" /> Salary range disclosed</label>
                 <label><input type="checkbox" name="opt_mentioned" /> OPT / CPT mentioned (check eligibility)</label>
+                <div class="field"><label for="requirement">Review description requirements</label>
+                  <select id="requirement" name="requirement"><option value="">All postings</option>
+                    <option value="experience">Experience requirements</option><option value="doctoral_degree">PhD mentions</option>
+                    <option value="work_authorization">Authorization restrictions</option><option value="enrollment">Enrollment</option>
+                    <option value="graduation_window">Graduation windows</option></select></div>
               </form>
             </div>
           </details>

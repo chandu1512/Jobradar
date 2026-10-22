@@ -2,6 +2,8 @@
 import html
 import re
 
+from app.requirements import screen
+
 
 def enrich(raw, url):
     parts = [raw.get(k, '') for k in ('content', 'descriptionPlain', 'descriptionBodyPlain',
@@ -44,7 +46,7 @@ def enrich(raw, url):
             salaries.append({'min': lo, 'max': hi, 'currency': currency,
                              'interval': match[3], 'source': 'posting_text'})
             salary_evidence.append(text[max(0, match.start()-80):match.end()+80])
-    return {'salary': {'ranges': salaries, 'evidence': salary_evidence[:8]},
+    return {'requirements': screen(text), 'salary': {'ranges': salaries, 'evidence': salary_evidence[:8]},
             'sponsorship': {'status': status, 'evidence': evidence[:8]},
             'opt': {'mentioned': bool(re.search(r'\b(?:OPT|CPT)\b', text)),
                     'status': 'unknown'}, 'source_url': url,

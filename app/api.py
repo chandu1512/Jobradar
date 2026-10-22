@@ -41,7 +41,8 @@ SENIOR = r"\m(senior|sr\.?|staff|principal|lead|manager|director|head|vp|archite
 JOB_COLS = """
 j.id, c.name AS company, c.ats, j.title, j.location, j.states, j.remote, j.is_us,
 j.url, j.posted_at, j.first_seen, j.discovered_live, j.signals,
-j.signals->'salary' AS salary, j.signals->'sponsorship' AS sponsorship, j.signals->'opt' AS opt
+j.signals->'requirements' AS requirements, j.signals->'salary' AS salary,
+j.signals->'sponsorship' AS sponsorship, j.signals->'opt' AS opt
 """
 
 
@@ -79,8 +80,16 @@ def _filters(q, location, state, us, remote, level, hours, category="", company=
 def list_jobs(q: str = "", location: str = "", state: str = "", us: bool = True, remote: bool = False,
               level: str = "", hours: int = Query(24, le=24 * 90), limit: int = Query(50, le=200),
               before_id: int | None = None, category: str = "", company: str = "",
-              sponsorship: str = "", opt_mentioned: bool = False, salary_disclosed: bool = False):
+              sponsorship: str = "", opt_mentioned: bool = False, salary_disclosed: bool = False,
+              requirement: str = ""):
+    # Requirement filters surface evidence, never assert personal eligibility.
     where, args = _filters(q, location, state, us, remote, level, hours, category, company)
+    if requirement:
+        if requirement not in {"experience", "doctoral_degree", "work_authorization",
+                               "enrollment", "graduation_window"}:
+            raise HTTPException(status_code=422, detail="Unknown requirement type")
+        where += " AND j.signals->'requirements'->'findings' @> %(requirement)s::jsonb"
+        args["requirement"] = json.dumps([{"type": requirement}])
     if sponsorship:
         if sponsorship not in {"offered", "not_offered", "unknown", "conflicting"}:
             raise HTTPException(status_code=422, detail="Unknown sponsorship status")
