@@ -1,237 +1,238 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JobRadar</title>
-<style>
-:root {
-  --bg: #fafaf9; --panel: #ffffff; --text: #1c1917; --muted: #78716c; --line: #e7e5e4;
-  --accent: #0f766e; --accent-soft: #ccfbf1; --new: #b45309; --new-soft: #fef3c7;
-}
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #0c0a09; --panel: #1c1917; --text: #f5f5f4; --muted: #a8a29e; --line: #292524;
-          --accent: #2dd4bf; --accent-soft: #134e4a; --new: #fbbf24; --new-soft: #451a03; }
-}
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text);
-       font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
-header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); }
-.wrap { max-width: 960px; margin: 0 auto; padding: 0 16px; }
-.top { display: flex; align-items: baseline; gap: 16px; padding: 14px 0 10px; flex-wrap: wrap; }
-h1 { font-size: 18px; margin: 0; letter-spacing: -0.01em; }
-.stats { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
-.live { display: inline-flex; align-items: center; gap: 6px; }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-.dot.on { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-form { display: flex; gap: 8px; flex-wrap: wrap; padding-bottom: 12px; }
-input, select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
-                border-radius: 8px; padding: 7px 10px; min-width: 0; }
-input[type=search] { flex: 1 1 220px; }
-label.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); }
-ul { list-style: none; margin: 0; padding: 0; }
-li { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 12px 0;
-     border-bottom: 1px solid var(--line); }
-li.fresh { animation: flash 3s ease-out; }
-@keyframes flash { from { background: var(--new-soft); } to { background: transparent; } }
-.title { font-weight: 600; color: var(--text); text-decoration: none; }
-.title:hover { color: var(--accent); }
-.meta { grid-column: 1; color: var(--muted); font-size: 13px; }
-.age { grid-row: 1 / span 2; grid-column: 2; text-align: right; font-size: 13px; color: var(--muted);
-       font-variant-numeric: tabular-nums; white-space: nowrap; }
-.tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 999px; margin-left: 6px;
-       background: var(--accent-soft); color: var(--accent); vertical-align: 1px; }
-.tag.new { background: var(--new-soft); color: var(--new); }
-.more { display: block; margin: 20px auto; font: inherit; background: none; border: 1px solid var(--line);
-        color: var(--text); border-radius: 8px; padding: 8px 16px; cursor: pointer; }
-.empty { color: var(--muted); padding: 40px 0; text-align: center; }
-</style>
-</head>
-<body>
-<header>
-  <div class="wrap">
-    <div class="top">
-      <h1>JobRadar</h1>
-      <span class="stats" id="stats"></span>
-      <span class="stats live"><span class="dot" id="dot"></span><span id="livetxt">connecting</span></span>
-    </div>
-    <form id="f">
-      <input type="search" name="q" placeholder="Title or company" autocomplete="off">
-      <input type="search" name="company" placeholder="Company" aria-label="Company"
-             list="companies" autocomplete="off">
-      <datalist id="companies"></datalist>
-      <select name="category" aria-label="Job category"><option value="">All job categories</option></select>
-      <select name="level">
-        <option value="">All levels</option>
-        <option value="newgrad">New grad / entry</option>
-        <option value="intern">Internships</option>
-      </select>
-      <select name="state"><option value="">All states</option></select>
-      <select name="hours">
-        <option value="1">Last hour</option>
-        <option value="24" selected>Last 24h</option>
-        <option value="168">Last 7 days</option>
-        <option value="720">Last 30 days</option>
-      </select>
-      <label class="chk"><input type="checkbox" name="remote"> Remote</label>
-    </form>
-  </div>
-</header>
-<main class="wrap">
-  <p class="stats" id="coverage" role="status" hidden></p>
-  <ul id="list"></ul>
-  <button class="more" id="more" hidden>Load more</button>
-</main>
-<script>
-const $ = s => document.querySelector(s);
-const form = $("#f"), list = $("#list"), more = $("#more");
-let lastId = null;
-let loadRequest = 0;
-
-const ago = t => {
-  const m = Math.max(0, (Date.now() - new Date(t)) / 60000);
-  if (m < 60) return `${Math.round(m)}m ago`;
-  if (m < 1440) return `${Math.round(m / 60)}h ago`;
-  return `${Math.round(m / 1440)}d ago`;
-};
-const esc = s => (s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-
-function params() {
-  const fd = new FormData(form), p = new URLSearchParams();
-  for (const k of ["q", "company", "category", "level", "state", "hours"]) if (fd.get(k)) p.set(k, fd.get(k));
-  if (fd.get("remote")) p.set("remote", "true");
-  return p;
-}
-
-function row(j, fresh) {
-  const li = document.createElement("li");
-  if (fresh) li.className = "fresh";
-  const where = j.states?.length ? `${j.location ?? ""}` : (j.location ?? "");
-  li.innerHTML = `
-    <div><a class="title" href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.title)}</a>
-      ${j.remote ? '<span class="tag">remote</span>' : ""}
-      ${j.discovered_live ? '<span class="tag new">live</span>' : ""}</div>
-    <div class="meta">${esc(j.company)} · ${esc(where)}</div>
-    <div class="age" data-t="${j.first_seen}">${ago(j.first_seen)}</div>`;
-  return li;
-}
-
-async function load(reset) {
-  const request = ++loadRequest;
-  const p = params(); p.set("limit", 50);
-  if (!reset && lastId) p.set("before_id", lastId);
-  const jobs = await fetch(`/jobs?${p}`).then(r => r.json());
-  if (request !== loadRequest) return;
-  if (reset) {
-    lastId = null;
-    list.innerHTML = "";
-    updateCoverage(p.get("company"), request);
-  }
-  jobs.forEach(j => list.append(row(j)));
-  lastId = jobs.length ? jobs[jobs.length - 1].id : lastId;
-  more.hidden = jobs.length < 50;
-  if (reset && !jobs.length) list.innerHTML = '<div class="empty">No matching indexed jobs in this window. Use the Company field to check employer coverage.</div>';
-}
-
-async function updateCoverage(company, request) {
-  const notice = $("#coverage");
-  notice.hidden = true;
-  if (!company?.trim()) return;
-  try {
-    const response = await fetch(`/coverage?${new URLSearchParams({company})}`);
-    if (!response.ok) throw new Error("Coverage unavailable");
-    const coverage = await response.json();
-    if (request !== loadRequest) return;
-    notice.hidden = false;
-    if (!coverage.covered) {
-      notice.textContent = `Company not covered yet: ${company}. This does not mean it has no openings.`;
-      return;
-    }
-    const companies = coverage.companies;
-    const count = companies.reduce((sum, c) => sum + Number(c.active_jobs), 0);
-    const pending = companies.some(c => !c.last_crawled_at);
-    const errors = companies.some(c => c.last_status === "error");
-    const partial = companies.some(c => c.ats === "amazon");
-    notice.textContent = `${count.toLocaleString()} active indexed jobs across matching companies. ` +
-      (pending ? "Initial collection is pending. " : "") +
-      (errors ? "Some sources have crawl errors. " : "") +
-      (partial ? "Amazon coverage is limited to a recent US window; closure status may be stale. " : "") +
-      "Your selected filters may show fewer results.";
-  } catch {
-    if (request === loadRequest) {
-      notice.hidden = false;
-      notice.textContent = "Company coverage could not be checked. Try again.";
-    }
-  }
-}
-
-function matches(j) {
-  const p = params(), q = (p.get("q") || "").toLowerCase();
-  if (!j.is_us) return false;
-  if (p.get("company") && !j.company.toLowerCase().includes(p.get("company").toLowerCase())) return false;
-  if (p.get("category") && !(j.categories || []).includes(p.get("category"))) return false;
-  if (q && !j.title.toLowerCase().includes(q) && !j.company.toLowerCase().includes(q)) return false;
-  if (p.get("state") && !j.states.includes(p.get("state"))) return false;
-  if (p.get("remote") && !j.remote) return false;
-  if (p.get("level")) return false; // level regex lives server side; the next reload picks these up
-  return true;
-}
-
-async function stats() {
-  const s = await fetch("/stats").then(r => r.json());
-  const med = s.median_detect_minutes == null ? "" : ` · median detect ${Math.round(s.median_detect_minutes)} min`;
-  $("#stats").textContent = `${s.companies.toLocaleString()} companies · ${s.active_us_jobs.toLocaleString()} US jobs · ${s.new_last_24h} new today${med}`;
-}
-
-let companyRequest = 0;
-async function companies() {
-  const request = ++companyRequest;
-  const p = new URLSearchParams({q: form.elements.company.value});
-  const rows = await fetch(`/companies?${p}`).then(r => r.json());
-  if (request !== companyRequest) return;
-  $("#companies").replaceChildren(...rows.map(c => new Option(c.name, c.name)));
-}
-
-async function categories() {
-  const rows = await fetch("/categories").then(r => r.json());
-  rows.forEach(c => form.elements.category.add(new Option(c.label, c.id)));
-}
-
-async function states() {
-  const rows = await fetch("/states").then(r => r.json()), sel = form.state;
-  rows.sort((a, b) => a.state.localeCompare(b.state))
-      .forEach(r => sel.add(new Option(`${r.state} (${r.n})`, r.state)));
-}
-
-function live() {
-  if ([".trycloudflare.com", ".ngrok-free.app", ".ngrok-free.dev"].some(s => location.hostname.endsWith(s))) {
-    $("#livetxt").textContent = "updates every 60s";
-    setInterval(() => {
-      if (document.visibilityState === "visible") load(true);
-    }, 60000);
-    return;
-  }
-  const es = new EventSource("/jobs/stream");
-  es.onopen = () => { $("#dot").className = "dot on"; $("#livetxt").textContent = "live"; };
-  es.onerror = () => { $("#dot").className = "dot"; $("#livetxt").textContent = "reconnecting"; };
-  es.onmessage = e => {
-    const j = JSON.parse(e.data);
-    if (matches(j)) { list.querySelector(".empty")?.remove(); list.prepend(row(j, true)); }
-  };
-}
-
-let companyTimer;
-form.elements.company.addEventListener("input", () => {
-  clearTimeout(companyTimer); companyTimer = setTimeout(companies, 200);
-});
-let t;
-form.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => load(true), 250); });
-form.addEventListener("submit", e => e.preventDefault());
-more.onclick = () => load(false);
-setInterval(() => document.querySelectorAll(".age").forEach(el => el.textContent = ago(el.dataset.t)), 30000);
-setInterval(stats, 60000);
-
-load(true); stats(); states(); categories(); companies(); live();
-</script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#6558d9" />
+    <meta
+      name="description"
+      content="Find fresh US job opportunities from company careers pages. Search by role, company, state, and experience level."
+    />
+    <title>JobRadar · Find your next opportunity</title>
+    <link rel="stylesheet" href="/static/styles.css?v=2" />
+    <script src="/static/app.js?v=2" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#results">Skip to jobs</a>
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a class="brand" href="/" aria-label="JobRadar home"
+          ><span class="brand-mark" aria-hidden="true"><span></span></span
+          >JobRadar<span class="brand-period">.</span></a
+        >
+        <div class="header-right">
+          <span class="nav-label">Find your next opportunity</span
+          ><span class="connection" role="status"
+            ><span class="dot" id="dot"></span
+            ><span id="livetxt">Connecting</span></span
+          >
+        </div>
+      </div>
+    </header>
+    <main class="shell">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <span class="eyebrow"
+            ><span aria-hidden="true">✦</span> A little earlier. A step
+            ahead.</span
+          >
+          <h1 id="hero-title">
+            Big possibilities.<br /><span>Fresh opportunities.</span>
+          </h1>
+          <p>
+            Find your next role, straight from company careers pages.<br
+              class="desktop-break"
+            />
+            Less noise. More time to make your move.
+          </p>
+        </div>
+        <div class="metrics" aria-label="JobRadar coverage">
+          <div class="metric">
+            <span class="metric-icon" aria-hidden="true">↗</span
+            ><strong id="stat-jobs">—</strong><span>US jobs indexed</span>
+          </div>
+          <div class="metric">
+            <span class="metric-icon" aria-hidden="true">▦</span
+            ><strong id="stat-companies">—</strong
+            ><span>Companies covered</span>
+          </div>
+          <div class="metric">
+            <span class="metric-icon" aria-hidden="true">✧</span
+            ><strong id="stat-new">—</strong><span>Found in the last 24h</span>
+          </div>
+        </div>
+      </section>
+      <div class="workspace">
+        <aside class="sidebar" aria-label="Job search filters">
+          <details class="filter-panel" id="filter-panel" open>
+            <summary>
+              <span>Refine your search</span
+              ><span class="filter-count" id="filter-count">Filters</span
+              ><span class="chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <div class="filter-inner">
+              <div class="filter-heading">
+                <h2>Make it your search</h2>
+                <button class="text-button" type="button" id="clear">
+                  Reset
+                </button>
+              </div>
+              <form id="f">
+                <div class="field">
+                  <label for="q">Role or keyword</label>
+                  <div class="search-input">
+                    <span aria-hidden="true">⌕</span
+                    ><input
+                      id="q"
+                      type="search"
+                      name="q"
+                      placeholder="e.g. software engineer"
+                      autocomplete="off"
+                    />
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="company">Company</label
+                  ><input
+                    id="company"
+                    type="search"
+                    name="company"
+                    placeholder="Search companies"
+                    list="companies"
+                    autocomplete="off"
+                  /><datalist id="companies"></datalist>
+                </div>
+                <div class="field">
+                  <label for="category">Job category</label
+                  ><select id="category" name="category">
+                    <option value="">All job categories</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="level">Experience level</label
+                  ><select id="level" name="level">
+                    <option value="">All experience levels</option>
+                    <option value="newgrad">New grad / entry level</option>
+                    <option value="intern">Internships</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="state">Location</label
+                  ><select id="state" name="state">
+                    <option value="">All US states</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="hours">Discovered within</label
+                  ><select id="hours" name="hours">
+                    <option value="1">Last hour</option>
+                    <option value="24" selected>Last 24 hours</option>
+                    <option value="168">Last 7 days</option>
+                    <option value="720">Last 30 days</option>
+                  </select>
+                </div>
+                <label class="remote-option" for="remote"
+                  ><span
+                    ><strong>Remote opportunities</strong
+                    ><small>Show remote roles only</small></span
+                  ><input id="remote" type="checkbox" name="remote" /><span
+                    class="toggle"
+                    aria-hidden="true"
+                  ></span
+                ></label>
+              </form>
+            </div>
+          </details>
+          <div class="sidebar-note">
+            <span aria-hidden="true">◎</span>
+            <p>
+              A clearer view of the job market.<br /><strong
+                >Always apply with the company.</strong
+              >
+            </p>
+          </div>
+        </aside>
+        <section class="results" id="results" aria-labelledby="results-title">
+          <div class="results-header">
+            <div>
+              <span class="eyebrow">Your next chapter</span>
+              <h2 id="results-title">Explore opportunities</h2>
+            </div>
+            <span class="sort-label"
+              >Newest discoveries first <span aria-hidden="true">↓</span></span
+            >
+          </div>
+          <div class="quick-filters" aria-label="Popular categories">
+            <button
+              type="button"
+              class="chip active"
+              data-category=""
+              aria-pressed="true"
+            >
+              All roles</button
+            ><button
+              type="button"
+              class="chip"
+              data-category="software"
+              aria-pressed="false"
+            >
+              Software engineering</button
+            ><button
+              type="button"
+              class="chip"
+              data-category="ai_ml"
+              aria-pressed="false"
+            >
+              AI / ML</button
+            ><button
+              type="button"
+              class="chip"
+              data-category="data_analysis"
+              aria-pressed="false"
+            >
+              Data analysis</button
+            ><button
+              type="button"
+              class="chip"
+              data-category="data_science"
+              aria-pressed="false"
+            >
+              Data science
+            </button>
+          </div>
+          <div class="results-meta">
+            <span id="result-count" role="status">Finding opportunities…</span
+            ><span class="us-label">US opportunities</span>
+          </div>
+          <p class="coverage-notice" id="coverage" role="status" hidden></p>
+          <p class="error-notice" id="error" role="alert" hidden></p>
+          <div id="empty" class="empty-state" hidden>
+            <span class="empty-icon" aria-hidden="true">⌕</span>
+            <h3>A fresh start for your search</h3>
+            <p>
+              No indexed jobs match these filters. Try another category, a wider
+              time window, or check coverage in the Company field.
+            </p>
+            <button class="button" id="empty-reset" type="button">
+              Clear filters
+            </button>
+          </div>
+          <ul class="job-list" id="list" aria-label="Job opportunities"></ul>
+          <button class="button load-more" id="more" type="button" hidden>
+            Explore more opportunities <span aria-hidden="true">↓</span>
+          </button>
+          <p class="results-note">
+            Times show when JobRadar found a role, not necessarily when it was
+            posted. Coverage is still growing.
+          </p>
+        </section>
+      </div>
+      <footer class="site-footer">
+        <a class="brand footer-brand" href="/"
+          >JobRadar<span class="brand-period">.</span></a
+        ><span>A better beginning to your job search.</span
+        ><a href="#hero-title">Back to top ↑</a>
+      </footer>
+    </main>
+  </body>
 </html>

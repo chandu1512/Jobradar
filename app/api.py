@@ -4,6 +4,7 @@ from pathlib import Path
 import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 from app import config
@@ -12,6 +13,7 @@ from app.db import connect
 
 app = FastAPI(title="JobRadar")
 STATIC = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
 @app.middleware("http")
