@@ -238,7 +238,7 @@ Source references:
 - [SmartRecruiters Posting API](https://developers.smartrecruiters.com/reference/v1listpostings)
 - [Amazon careers search](https://www.amazon.jobs/en/search)
 
-The public Quick Tunnel demo uses a 60 second page refresh instead of SSE. Its URL is
+The public Quick Tunnel and ngrok free demo domains use a 60 second page refresh instead of SSE. Its URL is
 temporary and the Mac and Docker must remain running. If an automated client receives a
 403, capture the response body and Cloudflare headers: the application has no API authentication
 or bot block, but an intermediary may reject individual clients. The running tunnel is outside

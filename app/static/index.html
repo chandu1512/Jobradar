@@ -204,7 +204,7 @@ async function states() {
 }
 
 function live() {
-  if (location.hostname.endsWith(".trycloudflare.com")) {
+  if ([".trycloudflare.com", ".ngrok-free.app", ".ngrok-free.dev"].some(s => location.hostname.endsWith(s))) {
     $("#livetxt").textContent = "updates every 60s";
     setInterval(() => {
       if (document.visibilityState === "visible") load(true);
