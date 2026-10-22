@@ -1,7 +1,7 @@
 # JobRadar
 
 JobRadar discovers company hiring boards and collects openings directly from public
-Greenhouse, Lever, and Ashby endpoints. It helps candidates find US roles and apply through
+Greenhouse, Lever, Ashby, SmartRecruiters, and Amazon careers endpoints. It helps candidates find US roles and apply through
 company hiring pages, with a focus on new graduates and international students.
 
 The system combines company discovery, scheduled crawling, Postgres storage, Redis Streams,
@@ -10,7 +10,7 @@ require an LLM or paid API keys.
 
 ## Features
 
-- Company discovery from Common Crawl, YC company lists, and SEC EDGAR.
+- Company discovery from Common Crawl, YC company lists, and SEC EDGAR, plus validated careers URL intake.
 - Board validation before promotion into the crawl pipeline.
 - Scalable workers, idempotent job upserts, closed listing detection, and crawl history.
 - US location, state, and remote classification.
@@ -159,7 +159,7 @@ resource monitoring. Do not expose the local Postgres and Redis ports publicly.
 
 ## Roadmap
 
-1. Expand verified company discovery and add Workday and SmartRecruiters.
+1. Expand verified company discovery and add Workday and more custom careers adapters.
 2. Improve location accuracy, posting date semantics, worker recovery, and rate limiting.
 3. Add email alerts and measure coverage and detection latency.
 4. Build duplicate detection, O*NET title normalization, skill and seniority extraction,
@@ -204,3 +204,42 @@ Run the full test suite with the unittest command in Validation.
 `/jobs?company=Stripe` adds a separate company name filter. `/companies?q=str` supplies
 company name suggestions from active companies, capped at 100 results. The UI combines
 company search with category, title, location, and level filters.
+
+## Careers coverage and adding companies
+
+Coverage is built source by source; arbitrary company careers pages are not automatically
+supported. Use the Company field to see whether a company is indexed, awaiting its initial
+crawl, or experiencing errors. `/coverage?company=Amazon` reports this independently of
+job filters. A missing company means a coverage gap, not that it has no openings.
+
+Add a supported public careers URL after rebuilding the API and workers:
+
+```sh
+docker compose build api worker
+docker compose run --rm api python -m app.discovery add https://www.amazon.jobs/en/ --name Amazon
+docker compose run --rm api python -m app.discovery add https://careers.smartrecruiters.com/BoschGroup --name 'Bosch Group'
+```
+
+The command recognizes supported board hosts, probes the source, and promotes only a board
+with open jobs. Unsupported URLs are rejected explicitly rather than added as broken companies.
+SmartRecruiters hosts are included in Common Crawl discovery. Workday and other custom
+careers platforms still need adapters; this does not establish coverage of every employer.
+
+`app/career_fetchers.py` adds paginated SmartRecruiters collection and Amazon's public,
+undocumented website search endpoint. The latter can change without notice. Amazon polling
+uses `country=USA`, sorts recent, and reads at most 1,000 results per crawl. It is partial
+coverage, and date precision is one day. Historical openings beyond that window are not
+backfilled. Partial feeds never deactivate unseen jobs, so their closure status can become
+stale until a separate verification pass is implemented. Pagination failures are crawl errors,
+not successful empty snapshots. Full SmartRecruiters snapshots retain normal closure detection.
+Workers update stored raw payloads when refreshing postings.
+
+Source references:
+- [SmartRecruiters Posting API](https://developers.smartrecruiters.com/reference/v1listpostings)
+- [Amazon careers search](https://www.amazon.jobs/en/search)
+
+The public Quick Tunnel demo uses a 60 second page refresh instead of SSE. Its URL is
+temporary and the Mac and Docker must remain running. If an automated client receives a
+403, capture the response body and Cloudflare headers: the application has no API authentication
+or bot block, but an intermediary may reject individual clients. The running tunnel is outside
+Compose; stop it with `docker stop jobradar-public-direct`.
